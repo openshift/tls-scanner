@@ -18,8 +18,10 @@ import (
 func main() {
 	host := flag.String("host", "127.0.0.1", "The target host or IP address to scan")
 	port := flag.String("port", "443", "The target port to scan")
-	jsonOutput := flag.String("json", "", "Output results in JSON format to specified file (if empty, outputs to stdout in human-readable format)")
-	csvOutput := flag.String("csv", "", "Output results in CSV format to specified file")
+	artifactDir := flag.String("artifact-dir", "/tmp", "Directory to save the artifacts to")
+	jsonFile := flag.String("json-file", "", "Output results in JSON format to specified file in artifact-dir")
+	csvFile := flag.String("csv-file", "", "Output results in CSV format to specified file in artifact-dir")
+	junitFile := flag.String("junit-file", "", "Output results in JUnit XML format to specified file in artifact-dir")
 	concurrentScans := flag.Int("j", 1, "Number of concurrent scans to run in parallel (speeds up large IP lists significantly!)")
 	allPods := flag.Bool("all-pods", false, "Scan all pods in the current namespace (overrides --iplist and --host)")
 	limitIPs := flag.Int("limit-ips", 0, "Limit the number of IPs to scan for testing purposes (0 = no limit)")
@@ -81,38 +83,56 @@ func main() {
 	if len(allPodsInfo) > 0 {
 		var scanResults ScanResults
 
-		if *csvOutput != "" {
+		if *csvFile != "" || *jsonFile != "" || *junitFile != "" {
 			scanResults = performClusterScan(allPodsInfo, *concurrentScans, k8sClient)
 
+			// Create artifact directory if it doesn't exist
+			if err := os.MkdirAll(*artifactDir, 0755); err != nil {
+				log.Fatalf("Could not create artifact directory %s: %v", *artifactDir, err)
+			}
+			log.Printf("Artifacts will be saved to: %s", *artifactDir)
+
 			// Write JSON if also requested
-			if *jsonOutput != "" {
-				// Convert ScanResults to JSON format
-				if err := writeJSONOutput(scanResults, *jsonOutput); err != nil {
+			if *jsonFile != "" {
+				jsonPath := filepath.Join(*artifactDir, *jsonFile)
+				if err := writeJSONOutput(scanResults, jsonPath); err != nil {
 					log.Printf("Error writing JSON output: %v", err)
 				} else {
-					log.Printf("JSON results written to: %s", *jsonOutput)
+					log.Printf("JSON results written to: %s", jsonPath)
 				}
 			}
 
 			// Write CSV output
-			if err := writeCSVOutput(scanResults, *csvOutput); err != nil {
-				log.Printf("Error writing CSV output: %v", err)
-			} else {
-				log.Printf("CSV results written to: %s", *csvOutput)
-			}
-
-			// Write scan errors CSV if there are any errors
-			if len(scanResults.ScanErrors) > 0 {
-				errorFilename := strings.TrimSuffix(*csvOutput, filepath.Ext(*csvOutput)) + "_errors.csv"
-				if err := writeScanErrorsCSV(scanResults, errorFilename); err != nil {
-					log.Printf("Error writing scan errors CSV: %v", err)
+			if *csvFile != "" {
+				csvPath := filepath.Join(*artifactDir, *csvFile)
+				if err := writeCSVOutput(scanResults, csvPath); err != nil {
+					log.Printf("Error writing CSV output: %v", err)
 				} else {
-					log.Printf("Scan errors written to: %s", errorFilename)
+					log.Printf("CSV results written to: %s", csvPath)
+				}
+
+				// Write scan errors CSV if there are any errors
+				if len(scanResults.ScanErrors) > 0 {
+					errorFilename := strings.TrimSuffix(csvPath, filepath.Ext(csvPath)) + "_errors.csv"
+					if err := writeScanErrorsCSV(scanResults, errorFilename); err != nil {
+						log.Printf("Error writing scan errors CSV: %v", err)
+					} else {
+						log.Printf("Scan errors written to: %s", errorFilename)
+					}
+				}
+			}
+			// Write JUnit XML output
+			if *junitFile != "" {
+				junitPath := filepath.Join(*artifactDir, *junitFile)
+				if err := writeJUnitOutput(scanResults, junitPath); err != nil {
+					log.Printf("Error writing JUnit XML output: %v", err)
+				} else {
+					log.Printf("JUnit XML results written to: %s", junitPath)
 				}
 			}
 
 			// Print to console if no output files specified
-			if *jsonOutput == "" {
+			if *jsonFile == "" {
 				printClusterResults(scanResults)
 			}
 		} else {
@@ -138,14 +158,14 @@ func main() {
 		log.Fatalf("Error parsing Nmap XML output: %v", err)
 	}
 
-	if *jsonOutput != "" {
-		if err := writeJSONOutput(nmapResult, *jsonOutput); err != nil {
+	if *jsonFile != "" {
+		if err := writeJSONOutput(nmapResult, *jsonFile); err != nil {
 			log.Fatalf("Error writing JSON output: %v", err)
 		}
-		log.Printf("JSON results written to %s", *jsonOutput)
+		log.Printf("JSON results written to %s", *jsonFile)
 	}
 
-	if *csvOutput != "" {
+	if *csvFile != "" {
 		// For single host scans, try to get TLS config if k8s client is available
 		var tlsConfig *TLSSecurityProfile
 		if k8sClient != nil {
@@ -186,14 +206,14 @@ func main() {
 			}
 		}
 
-		if err := writeCSVOutput(singleResult, *csvOutput); err != nil {
+		if err := writeCSVOutput(singleResult, *csvFile); err != nil {
 			log.Fatalf("Error writing CSV output: %v", err)
 		}
-		log.Printf("CSV results written to %s", *csvOutput)
+		log.Printf("CSV results written to %s", *csvFile)
 
 		// Write scan errors CSV if there are any errors
 		if len(singleResult.ScanErrors) > 0 {
-			errorFilename := strings.TrimSuffix(*csvOutput, filepath.Ext(*csvOutput)) + "_errors.csv"
+			errorFilename := strings.TrimSuffix(*csvFile, filepath.Ext(*csvFile)) + "_errors.csv"
 			if err := writeScanErrorsCSV(singleResult, errorFilename); err != nil {
 				log.Printf("Error writing scan errors CSV: %v", err)
 			} else {
@@ -202,9 +222,72 @@ func main() {
 		}
 	}
 
-	if *jsonOutput == "" && *csvOutput == "" {
+	if *jsonFile == "" && *csvFile == "" {
 		printParsedResults(nmapResult)
 	}
+}
+
+func writeJUnitOutput(scanResults ScanResults, filename string) error {
+	testSuite := JUnitTestSuite{
+		Name: "TLSSecurityScan",
+	}
+
+	for _, ipResult := range scanResults.IPResults {
+		for _, portResult := range ipResult.PortResults {
+			testCase := JUnitTestCase{
+				Name:      fmt.Sprintf("%s:%d - %s", ipResult.IP, portResult.Port, portResult.Service),
+				ClassName: ipResult.Pod.Name,
+			}
+
+			var failures []string
+			if portResult.IngressTLSConfigCompliance != nil && (!portResult.IngressTLSConfigCompliance.Version || !portResult.IngressTLSConfigCompliance.Ciphers) {
+				failures = append(failures, "Ingress TLS config is not compliant.")
+			}
+			if portResult.APIServerTLSConfigCompliance != nil && (!portResult.APIServerTLSConfigCompliance.Version || !portResult.APIServerTLSConfigCompliance.Ciphers) {
+				failures = append(failures, "API Server TLS config is not compliant.")
+			}
+			if portResult.KubeletTLSConfigCompliance != nil && (!portResult.KubeletTLSConfigCompliance.Version || !portResult.KubeletTLSConfigCompliance.Ciphers) {
+				failures = append(failures, "Kubelet TLS config is not compliant.")
+			}
+
+			if len(failures) > 0 {
+				testCase.Failure = &JUnitFailure{
+					Message: "TLS Compliance Failed",
+					Type:    "TLSComplianceCheck",
+					Content: strings.Join(failures, "\n"),
+				}
+				testSuite.Failures++
+			}
+
+			testSuite.TestCases = append(testSuite.TestCases, testCase)
+		}
+	}
+
+	testSuite.Tests = len(testSuite.TestCases)
+
+	// Create the directory for the file if it doesn't exist
+	dir := filepath.Dir(filename)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("could not create directory for JUnit report: %v", err)
+	}
+
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("could not create JUnit report file: %v", err)
+	}
+	defer file.Close()
+
+	if _, err := file.WriteString(xml.Header); err != nil {
+		return fmt.Errorf("failed to write XML header to JUnit report: %v", err)
+	}
+
+	encoder := xml.NewEncoder(file)
+	encoder.Indent("", "  ")
+	if err := encoder.Encode(testSuite); err != nil {
+		return fmt.Errorf("could not encode JUnit report: %v", err)
+	}
+
+	return nil
 }
 
 func isNmapInstalled() bool {
