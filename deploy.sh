@@ -20,6 +20,16 @@ if [ -z "$CURRENT_PROJECT" ]; then
 fi
 echo "--> Operating in project: $CURRENT_PROJECT"
 
+# --- CI/CD Environment Setup ---
+if [ -z "$ARTIFACT_DIR" ]; then
+    echo "--> ARTIFACT_DIR not set, defaulting to ./artifacts for local execution."
+    ARTIFACT_DIR="./artifacts"
+fi
+echo "--> Artifacts will be stored in: $ARTIFACT_DIR"
+# Create artifact directories
+mkdir -p "$ARTIFACT_DIR/junit"
+check_error "Creating artifact directories"
+
 
 # --- Functions ---
 
@@ -236,31 +246,51 @@ if [ -z "$POD_NAME" ]; then
 fi
 
 echo "--> Executing the scan in the background inside the pod..."
+# Define artifact paths inside the pod
+SCAN_DATE=$(date +%Y%m%d)
+POD_ARTIFACT_DIR="/tmp/artifacts"
+POD_CSV_FILE="security-scan-$SCAN_DATE.csv"
+POD_JSON_FILE="security-scan-$SCAN_DATE.json"
+POD_JUNIT_FILE="junit/junit-tls-scan.xml"
+POD_LOG_FILE="logs.log"
+
 # The command is run in the background of the script, but synchronously inside the pod
-oc exec -n "$CURRENT_PROJECT" "$POD_NAME" -- /usr/local/bin/check-network -all-pods -csv /tmp/security-scan-$(date +%Y%m%d).csv -json /tmp/security-scan-$(date +%Y%m%d).json -j 12 
+oc exec -n "$CURRENT_PROJECT" "$POD_NAME" -- /usr/local/bin/check-network \
+    -all-pods \
+    --artifact-dir="$POD_ARTIFACT_DIR" \
+    --csv-file="$POD_CSV_FILE" \
+    --json-file="$POD_JSON_FILE" \
+    --junit-file="$POD_JUNIT_FILE" \
+    -j 12 \
+    --log-file="$POD_ARTIFACT_DIR/$POD_LOG_FILE"
 check_error "Executing scan"
 
 print_header "Step 3: Retrieving and Displaying Results"
 
 echo "--> Copying debug log from the pod..."
-oc cp "$CURRENT_PROJECT/$POD_NAME:/tmp/logs.log" ./logs.log
+oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/$POD_LOG_FILE" "$ARTIFACT_DIR/logs.log"
 check_error "Copying debug log from pod"
 
 echo "--> Copying CSV results from the pod..."
-SCAN_DATE=$(date +%Y%m%d)
-oc cp "$CURRENT_PROJECT/$POD_NAME:/tmp/security-scan-$SCAN_DATE.csv" ./security-scan-$SCAN_DATE.csv
+oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/$POD_CSV_FILE" "$ARTIFACT_DIR/security-scan-$SCAN_DATE.csv"
 check_error "Copying CSV results from pod"
 
 echo "--> Copying JSON results from the pod..."
-oc cp "$CURRENT_PROJECT/$POD_NAME:/tmp/security-scan-$SCAN_DATE.json" ./security-scan-$SCAN_DATE.json
+oc cp "$CURRENT_pROJECT/$POD_NAME:$POD_ARTIFACT_DIR/$POD_JSON_FILE" "$ARTIFACT_DIR/security-scan-$SCAN_DATE.json"
 check_error "Copying JSON results from pod"
 
-echo "--> Copying scan error results from the pod (if they exist)..."
-oc cp "$CURRENT_PROJECT/$POD_NAME:/tmp/security-scan-$SCAN_DATE"_errors.csv ./security-scan-$SCAN_DATE"_errors.csv" 2>/dev/null || echo "   No scan errors file found (this is normal if no scan errors occurred)"
+echo "--> Copying JUnit XML results from the pod..."
+oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/$POD_JUNIT_FILE" "$ARTIFACT_DIR/junit/junit-tls-scan.xml"
+check_error "Copying JUnit XML results from pod"
 
-echo "--> Scan complete! Results available:"
-echo "   CSV Security Report: security-scan-$SCAN_DATE.csv"
-echo "   JSON Detailed Results: security-scan-$SCAN_DATE.json"
-echo "   CSV Error Report: security-scan-$SCAN_DATE"_errors.csv" (if errors occurred)"
+echo "--> Copying scan error results from the pod (if they exist)..."
+oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/security-scan-${SCAN_DATE}_errors.csv" "$ARTIFACT_DIR/security-scan-${SCAN_DATE}_errors.csv" 2>/dev/null || echo "   No scan errors file found (this is normal if no scan errors occurred)"
+
+echo "--> Scan complete! Results available in $ARTIFACT_DIR"
+echo "   JUnit Report: $ARTIFACT_DIR/junit/junit-tls-scan.xml"
+echo "   CSV Security Report: $ARTIFACT_DIR/security-scan-$SCAN_DATE.csv"
+echo "   JSON Detailed Results: $ARTIFACT_DIR/security-scan-$SCAN_DATE.json"
+echo "   CSV Error Report: $ARTIFACT_DIR/security-scan-$SCAN_DATE"_errors.csv" (if errors occurred)"
+echo "   Debug Log: $ARTIFACT_DIR/logs.log"
 echo ""
 
