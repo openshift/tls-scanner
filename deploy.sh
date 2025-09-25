@@ -2,9 +2,18 @@
 
 # A script to build, deploy, and run the OpenShift scanner application.
 #
-# Usage: ./deploy_and_scan.sh
+# Usage: ./deploy.sh <junit-xml-output-path>
 #
-# This script will create the pod_ips.txt file in the current directory.
+# This script will create the specified JUnit XML file.
+
+if [ -z "$1" ]; then
+    echo "Usage: $0 <junit-xml-output-path>"
+    echo "e.g., $0 /path/to/artifacts/junit.xml"
+    exit 1
+fi
+
+JUNIT_OUTPUT_PATH="$1"
+JUNIT_OUTPUT_DIR=$(dirname "$JUNIT_OUTPUT_PATH")
 
 # --- Configuration ---
 APP_NAME="scanner-app"
@@ -21,14 +30,10 @@ fi
 echo "--> Operating in project: $CURRENT_PROJECT"
 
 # --- CI/CD Environment Setup ---
-if [ -z "$ARTIFACT_DIR" ]; then
-    echo "--> ARTIFACT_DIR not set, defaulting to ./artifacts for local execution."
-    ARTIFACT_DIR="./artifacts"
-fi
-echo "--> Artifacts will be stored in: $ARTIFACT_DIR"
+echo "--> Artifacts will be stored in: $JUNIT_OUTPUT_DIR"
 # Create artifact directories
-mkdir -p "$ARTIFACT_DIR/junit"
-check_error "Creating artifact directories"
+mkdir -p "$JUNIT_OUTPUT_DIR"
+check_error "Creating artifact directory"
 
 
 # --- Functions ---
@@ -249,48 +254,36 @@ echo "--> Executing the scan in the background inside the pod..."
 # Define artifact paths inside the pod
 SCAN_DATE=$(date +%Y%m%d)
 POD_ARTIFACT_DIR="/tmp/artifacts"
-POD_CSV_FILE="security-scan-$SCAN_DATE.csv"
-POD_JSON_FILE="security-scan-$SCAN_DATE.json"
-POD_JUNIT_FILE="junit/junit-tls-scan.xml"
+POD_JUNIT_FILE="junit-tls-scan.xml"
 POD_LOG_FILE="logs.log"
 
+# Create artifact dir in pod
+oc exec -n "$CURRENT_PROJECT" "$POD_NAME" -- mkdir -p "$POD_ARTIFACT_DIR"
+check_error "Creating artifact dir in pod"
+
 # The command is run in the background of the script, but synchronously inside the pod
-oc exec -n "$CURRENT_PROJECT" "$POD_NAME" -- /usr/local/bin/check-network \
+oc exec -n "$CURRENT_PROJECT" "$POD_NAME" -- /usr/local/bin/tls-scanner \
     -all-pods \
-    --artifact-dir="$POD_ARTIFACT_DIR" \
-    --csv-file="$POD_CSV_FILE" \
-    --json-file="$POD_JSON_FILE" \
-    --junit-file="$POD_JUNIT_FILE" \
-    -j 12 \
-    --log-file="$POD_ARTIFACT_DIR/$POD_LOG_FILE"
+    -junitxml "$POD_ARTIFACT_DIR/$POD_JUNIT_FILE" \
+    -j 12
 check_error "Executing scan"
 
 print_header "Step 3: Retrieving and Displaying Results"
 
 echo "--> Copying debug log from the pod..."
-oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/$POD_LOG_FILE" "$ARTIFACT_DIR/logs.log"
+oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/$POD_LOG_FILE" "$JUNIT_OUTPUT_DIR/logs.log"
 check_error "Copying debug log from pod"
 
-echo "--> Copying CSV results from the pod..."
-oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/$POD_CSV_FILE" "$ARTIFACT_DIR/security-scan-$SCAN_DATE.csv"
-check_error "Copying CSV results from pod"
-
-echo "--> Copying JSON results from the pod..."
-oc cp "$CURRENT_pROJECT/$POD_NAME:$POD_ARTIFACT_DIR/$POD_JSON_FILE" "$ARTIFACT_DIR/security-scan-$SCAN_DATE.json"
-check_error "Copying JSON results from pod"
-
 echo "--> Copying JUnit XML results from the pod..."
-oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/$POD_JUNIT_FILE" "$ARTIFACT_DIR/junit/junit-tls-scan.xml"
+oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/$POD_JUNIT_FILE" "$JUNIT_OUTPUT_PATH"
 check_error "Copying JUnit XML results from pod"
 
 echo "--> Copying scan error results from the pod (if they exist)..."
-oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/security-scan-${SCAN_DATE}_errors.csv" "$ARTIFACT_DIR/security-scan-${SCAN_DATE}_errors.csv" 2>/dev/null || echo "   No scan errors file found (this is normal if no scan errors occurred)"
+oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/security-scan-${SCAN_DATE}_errors.csv" "$JUNIT_OUTPUT_DIR/security-scan-${SCAN_DATE}_errors.csv" 2>/dev/null || echo "   No scan errors file found (this is normal if no scan errors occurred)"
 
-echo "--> Scan complete! Results available in $ARTIFACT_DIR"
-echo "   JUnit Report: $ARTIFACT_DIR/junit/junit-tls-scan.xml"
-echo "   CSV Security Report: $ARTIFACT_DIR/security-scan-$SCAN_DATE.csv"
-echo "   JSON Detailed Results: $ARTIFACT_DIR/security-scan-$SCAN_DATE.json"
-echo "   CSV Error Report: $ARTIFACT_DIR/security-scan-$SCAN_DATE"_errors.csv" (if errors occurred)"
-echo "   Debug Log: $ARTIFACT_DIR/logs.log"
+echo "--> Scan complete! Results available in $JUNIT_OUTPUT_DIR"
+echo "   JUnit Report: $JUNIT_OUTPUT_PATH"
+echo "   CSV Error Report: $JUNIT_OUTPUT_DIR/security-scan-$SCAN_DATE"_errors.csv" (if errors occurred)"
+echo "   Debug Log: $JUNIT_OUTPUT_DIR/logs.log"
 echo ""
 
