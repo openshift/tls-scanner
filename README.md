@@ -1,4 +1,4 @@
-# check-network
+# tls-scanner
 
 A network security scanner for OpenShift/Kubernetes clusters that combines nmap port scanning with SSL/TLS cipher enumeration and OpenShift component analysis.
 
@@ -13,7 +13,7 @@ A network security scanner for OpenShift/Kubernetes clusters that combines nmap 
 
 1. **Build the scanner:**
    ```bash
-   go build -o check-network .
+   go build -o tls-scanner .
    ```
 
 2. **Set up cluster access:**
@@ -46,7 +46,7 @@ The deployment script automatically:
 ### Command Line Options
 
 ```bash
-./check-network [OPTIONS]
+./tls-scanner [OPTIONS]
 ```
 
 **Options:**
@@ -64,44 +64,44 @@ The deployment script automatically:
 
 **Scan a single host:**
 ```bash
-./check-network -host 10.0.0.1 -port 443
+./tls-scanner -host 10.0.0.1 -port 443
 ```
 
 **Scan multiple IPs from file:**
 ```bash
 echo -e "10.0.0.1\n10.0.0.2\n10.0.0.3" > targets.txt
-./check-network -iplist targets.txt -j 5
+./tls-scanner -iplist targets.txt -j 5
 ```
 
 **Scan entire OpenShift cluster (JSON output):**
 ```bash
 export KUBECONFIG=/path/to/cluster/config
-./check-network -all-pods -json results.json -j 12
+./tls-scanner -all-pods -json results.json -j 12
 ```
 
 **CSV security scan with default columns:**
 ```bash
-./check-network -all-pods -csv security-scan-$(date +%Y%m%d).csv -j 15
+./tls-scanner -all-pods -csv security-scan-$(date +%Y%m%d).csv -j 15
 ```
 
 **Full security analysis with all columns:**
 ```bash  
-./check-network -all-pods -csv full-scan-$(date +%Y%m%d).csv -csv-columns all -j 15
+./tls-scanner -all-pods -csv full-scan-$(date +%Y%m%d).csv -csv-columns all -j 15
 ```
 
 **Minimal TLS analysis:**
 ```bash
-./check-network -all-pods -csv minimal-$(date +%Y%m%d).csv -csv-columns minimal -j 15
+./tls-scanner -all-pods -csv minimal-$(date +%Y%m%d).csv -csv-columns minimal -j 15
 ```
 
 **Custom column selection:**
 ```bash
-./check-network -all-pods -csv custom-$(date +%Y%m%d).csv -csv-columns "IP Address,Port,Service,TLS Version,Cipher Suites,Process Name" -j 15
+./tls-scanner -all-pods -csv custom-$(date +%Y%m%d).csv -csv-columns "IP Address,Port,Service,TLS Version,Cipher Suites,Process Name" -j 15
 ```
 
 **Json+CSV security scan (auto-generates service mapping):**
 ```bash
-./check-network -all-pods -csv security-scan-$(date +%Y%m%d).csv -json security-scan-$(date +%Y%m%d).json -j 15
+./tls-scanner -all-pods -csv security-scan-$(date +%Y%m%d).csv -json security-scan-$(date +%Y%m%d).json -j 15
 ```
 
 ### Required Permissions
@@ -138,3 +138,6 @@ graph LR
             E --> F[6. Aggregate Results]
         end
     end
+
+```
+  
