@@ -56,6 +56,7 @@ The deployment script automatically:
 - `-all-pods` - Scan all pods in the cluster (requires cluster access)
 - `-json <file>` - Output results in JSON format to specified file
 - `-csv <file>` - Output results in CSV format to specified file
+- `-junitxml <file>` - Output results in JUnit XML format to specified file
 - `-csv-columns <spec>` - Control CSV columns: 'all', 'default', 'minimal', or comma-separated list (default: 'default')
 - `-service-mapping <file>` - Generate service-to-IP mapping JSON file (auto-generated for cluster scans)
 - `-j <num>` - Number of concurrent workers (default: 1, max recommended: 50)
@@ -102,6 +103,11 @@ export KUBECONFIG=/path/to/cluster/config
 **Json+CSV security scan (auto-generates service mapping):**
 ```bash
 ./tls-scanner -all-pods -csv security-scan-$(date +%Y%m%d).csv -json security-scan-$(date +%Y%m%d).json -j 15
+```
+
+**JUnit XML output for CI/CD integration:**
+```bash
+./tls-scanner -all-pods -junitxml results.xml -j 15
 ```
 
 ### Required Permissions
