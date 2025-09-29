@@ -1,7 +1,7 @@
 # Makefile for check-network
 
 # Binary name
-BINARY_NAME=check-network
+BINARY_NAME=tls-scanner
 
 # Build directory
 BUILD_DIR=bin
