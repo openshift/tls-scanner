@@ -22,7 +22,7 @@ all: build
 .PHONY: build
 build:
 	mkdir -p $(BUILD_DIR)
-	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) .
+	$(GOBUILD) -mod=mod -o $(BUILD_DIR)/$(BINARY_NAME) .
 
 # Clean build artifacts
 .PHONY: clean
