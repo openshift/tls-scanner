@@ -24,6 +24,7 @@ func main() {
 	junitFile := flag.String("junit-file", "", "Output results in JUnit XML format to specified file in artifact-dir")
 	concurrentScans := flag.Int("j", 1, "Number of concurrent scans to run in parallel (speeds up large IP lists significantly!)")
 	allPods := flag.Bool("all-pods", false, "Scan all pods in the current namespace (overrides --iplist and --host)")
+	targets := flag.String("targets", "", "A comma-separated list of host:port targets to scan")
 	limitIPs := flag.Int("limit-ips", 0, "Limit the number of IPs to scan for testing purposes (0 = no limit)")
 	logFile := flag.String("log-file", "", "Redirect all log output to the specified file")
 	flag.Parse()
@@ -50,6 +51,75 @@ func main() {
 	var k8sClient *K8sClient
 	var err error
 	var allPodsInfo []PodInfo
+
+	if *targets != "" {
+		targetList := strings.Split(*targets, ",")
+		if len(targetList) == 0 || (len(targetList) == 1 && targetList[0] == "") {
+			log.Fatal("Error: --targets flag provided but no targets were specified")
+		}
+
+		targetsByHost := make(map[string][]string)
+		for _, t := range targetList {
+			parts := strings.Split(t, ":")
+			if len(parts) != 2 {
+				log.Printf("Warning: Skipping invalid target format: %s (expected host:port)", t)
+				continue
+			}
+			host := parts[0]
+			port := parts[1]
+			targetsByHost[host] = append(targetsByHost[host], port)
+		}
+
+		if len(targetsByHost) == 0 {
+			log.Fatal("Error: No valid targets found in --targets flag")
+		}
+
+		scanResults := performTargetsScan(targetsByHost, *concurrentScans)
+
+		// Create artifact directory if it doesn't exist
+		if *csvFile != "" || *jsonFile != "" || *junitFile != "" {
+			if err := os.MkdirAll(*artifactDir, 0755); err != nil {
+				log.Fatalf("Could not create artifact directory %s: %v", *artifactDir, err)
+			}
+			log.Printf("Artifacts will be saved to: %s", *artifactDir)
+		}
+
+		// Write JSON if also requested
+		if *jsonFile != "" {
+			jsonPath := filepath.Join(*artifactDir, *jsonFile)
+			if err := writeJSONOutput(scanResults, jsonPath); err != nil {
+				log.Printf("Error writing JSON output: %v", err)
+			} else {
+				log.Printf("JSON results written to: %s", jsonPath)
+			}
+		}
+
+		// Write CSV output
+		if *csvFile != "" {
+			csvPath := filepath.Join(*artifactDir, *csvFile)
+			if err := writeCSVOutput(scanResults, csvPath); err != nil {
+				log.Printf("Error writing CSV output: %v", err)
+			} else {
+				log.Printf("CSV results written to: %s", csvPath)
+			}
+		}
+		// Write JUnit XML output
+		if *junitFile != "" {
+			junitPath := filepath.Join(*artifactDir, *junitFile)
+			if err := writeJUnitOutput(scanResults, junitPath); err != nil {
+				log.Printf("Error writing JUnit XML output: %v", err)
+			} else {
+				log.Printf("JUnit XML results written to: %s", junitPath)
+			}
+		}
+
+		// Print to console if no output files specified
+		if *jsonFile == "" && *csvFile == "" && *junitFile == "" {
+			printClusterResults(scanResults)
+		}
+
+		return
+	}
 
 	if *allPods {
 		k8sClient, err = newK8sClient()
@@ -683,4 +753,144 @@ func limitPodsToIPCount(allPodsInfo []PodInfo, maxIPs int) []PodInfo {
 	}
 
 	return limitedPods
+}
+
+func performTargetsScan(targetsByHost map[string][]string, concurrentScans int) ScanResults {
+	startTime := time.Now()
+
+	totalIPs := len(targetsByHost)
+
+	fmt.Printf("========================================\n")
+	fmt.Printf("TARGETS SCAN STARTING\n")
+	fmt.Printf("========================================\n")
+	fmt.Printf("Total hosts to scan: %d\n", totalIPs)
+	fmt.Printf("Concurrent workers: %d\n", concurrentScans)
+	fmt.Printf("========================================\n\n")
+
+	results := ScanResults{
+		Timestamp: startTime.Format(time.RFC3339),
+		TotalIPs:  totalIPs,
+		IPResults: make([]IPResult, 0, totalIPs),
+	}
+
+	type targetJob struct {
+		host  string
+		ports []string
+	}
+
+	// Create a channel to send targets to workers
+	targetChan := make(chan targetJob, totalIPs)
+
+	// Use a WaitGroup to wait for all workers to complete
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	// Start worker goroutines
+	for w := 0; w < concurrentScans; w++ {
+		workerID := w + 1
+		log.Printf("Starting WORKER %d", workerID)
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for job := range targetChan {
+				log.Printf("WORKER %d: Processing host %s", workerID, job.host)
+				ipResult := scanHostPorts(job.host, job.ports)
+
+				mu.Lock()
+				results.IPResults = append(results.IPResults, ipResult)
+				results.ScannedIPs++
+				mu.Unlock()
+				log.Printf("WORKER %d: Completed %s (%d/%d hosts done)", workerID, job.host, results.ScannedIPs, totalIPs)
+			}
+			log.Printf("WORKER %d: FINISHED", workerID)
+		}(workerID)
+	}
+
+	// Send targets to workers
+	for host, ports := range targetsByHost {
+		targetChan <- targetJob{host: host, ports: ports}
+	}
+	close(targetChan)
+
+	// Wait for all workers to complete
+	wg.Wait()
+
+	duration := time.Since(startTime)
+
+	fmt.Printf("\n========================================\n")
+	fmt.Printf("TARGETS SCAN COMPLETE!\n")
+	fmt.Printf("========================================\n")
+	fmt.Printf("Total hosts processed: %d\n", results.ScannedIPs)
+	fmt.Printf("Total time: %v\n", duration)
+	fmt.Printf("Concurrent workers used: %d\n", concurrentScans)
+	if results.ScannedIPs > 0 {
+		fmt.Printf("Average time per host: %.2fs\n", duration.Seconds()/float64(results.ScannedIPs))
+	}
+	fmt.Printf("========================================\n")
+
+	return results
+}
+
+func scanHostPorts(host string, ports []string) IPResult {
+	portSpec := strings.Join(ports, ",")
+	log.Printf("Scanning SSL ciphers on %s for ports: %s", host, portSpec)
+
+	ipResult := IPResult{
+		IP:          host,
+		Status:      "scanned",
+		PortResults: make([]PortResult, 0, len(ports)),
+	}
+	for _, pStr := range ports {
+		p, _ := strconv.Atoi(pStr)
+		ipResult.OpenPorts = append(ipResult.OpenPorts, p)
+	}
+
+	cmd := exec.Command("nmap", "-sV", "--script", "ssl-enum-ciphers", "-p", portSpec, "-oX", "-", host)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		ipResult.Error = fmt.Sprintf("nmap scan failed: %v", err)
+		for _, portStr := range ports {
+			port, _ := strconv.Atoi(portStr)
+			ipResult.PortResults = append(ipResult.PortResults, PortResult{Port: port, Error: "nmap scan failed"})
+		}
+		return ipResult
+	}
+
+	var nmapResult NmapRun
+	if err := xml.Unmarshal(output, &nmapResult); err != nil {
+		ipResult.Error = fmt.Sprintf("failed to parse nmap XML: %v", err)
+		for _, portStr := range ports {
+			port, _ := strconv.Atoi(portStr)
+			ipResult.PortResults = append(ipResult.PortResults, PortResult{Port: port, Error: "nmap xml parse failed"})
+		}
+		return ipResult
+	}
+
+	resultsByPort := make(map[string]PortResult)
+	if len(nmapResult.Hosts) > 0 {
+		for _, nmapPort := range nmapResult.Hosts[0].Ports {
+			portNum, _ := strconv.Atoi(nmapPort.PortID)
+			portResult := PortResult{
+				Port:     portNum,
+				Protocol: nmapPort.Protocol,
+				State:    nmapPort.State.State,
+				Service:  nmapPort.Service.Name,
+				NmapRun:  NmapRun{Hosts: []Host{{Ports: []Port{nmapPort}}}},
+			}
+			portResult.TlsVersions, portResult.TlsCiphers, portResult.TlsCipherStrength = extractTLSInfo(portResult.NmapRun)
+			resultsByPort[nmapPort.PortID] = portResult
+		}
+	}
+
+	for _, portStr := range ports {
+		port, _ := strconv.Atoi(portStr)
+		if portResult, ok := resultsByPort[portStr]; ok {
+			ipResult.PortResults = append(ipResult.PortResults, portResult)
+		} else {
+			// Port was specified but not in the result (e.g., not an SSL port or closed)
+			ipResult.PortResults = append(ipResult.PortResults, PortResult{Port: port, State: "closed/filtered"})
+		}
+	}
+
+	return ipResult
 }
