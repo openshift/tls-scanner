@@ -1,4 +1,4 @@
-module github.com/richardsonnick/check-network
+module github.com/richardsonnick/tls-scanner
 
 go 1.24.0
 

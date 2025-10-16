@@ -86,7 +86,10 @@ func main() {
 
 		// Write JSON if also requested
 		if *jsonFile != "" {
-			jsonPath := filepath.Join(*artifactDir, *jsonFile)
+			jsonPath := *jsonFile
+			if !filepath.IsAbs(jsonPath) {
+				jsonPath = filepath.Join(*artifactDir, *jsonFile)
+			}
 			if err := writeJSONOutput(scanResults, jsonPath); err != nil {
 				log.Printf("Error writing JSON output: %v", err)
 			} else {
@@ -96,7 +99,10 @@ func main() {
 
 		// Write CSV output
 		if *csvFile != "" {
-			csvPath := filepath.Join(*artifactDir, *csvFile)
+			csvPath := *csvFile
+			if !filepath.IsAbs(csvPath) {
+				csvPath = filepath.Join(*artifactDir, *csvFile)
+			}
 			if err := writeCSVOutput(scanResults, csvPath); err != nil {
 				log.Printf("Error writing CSV output: %v", err)
 			} else {
@@ -105,7 +111,10 @@ func main() {
 		}
 		// Write JUnit XML output
 		if *junitFile != "" {
-			junitPath := filepath.Join(*artifactDir, *junitFile)
+			junitPath := *junitFile
+			if !filepath.IsAbs(junitPath) {
+				junitPath = filepath.Join(*artifactDir, *junitFile)
+			}
 			if err := writeJUnitOutput(scanResults, junitPath); err != nil {
 				log.Printf("Error writing JUnit XML output: %v", err)
 			} else {
@@ -164,7 +173,10 @@ func main() {
 
 			// Write JSON if also requested
 			if *jsonFile != "" {
-				jsonPath := filepath.Join(*artifactDir, *jsonFile)
+				jsonPath := *jsonFile
+				if !filepath.IsAbs(jsonPath) {
+					jsonPath = filepath.Join(*artifactDir, *jsonFile)
+				}
 				if err := writeJSONOutput(scanResults, jsonPath); err != nil {
 					log.Printf("Error writing JSON output: %v", err)
 				} else {
@@ -174,7 +186,10 @@ func main() {
 
 			// Write CSV output
 			if *csvFile != "" {
-				csvPath := filepath.Join(*artifactDir, *csvFile)
+				csvPath := *csvFile
+				if !filepath.IsAbs(csvPath) {
+					csvPath = filepath.Join(*artifactDir, *csvFile)
+				}
 				if err := writeCSVOutput(scanResults, csvPath); err != nil {
 					log.Printf("Error writing CSV output: %v", err)
 				} else {
@@ -193,7 +208,10 @@ func main() {
 			}
 			// Write JUnit XML output
 			if *junitFile != "" {
-				junitPath := filepath.Join(*artifactDir, *junitFile)
+				junitPath := *junitFile
+				if !filepath.IsAbs(junitPath) {
+					junitPath = filepath.Join(*artifactDir, *junitFile)
+				}
 				if err := writeJUnitOutput(scanResults, junitPath); err != nil {
 					log.Printf("Error writing JUnit XML output: %v", err)
 				} else {
@@ -229,13 +247,21 @@ func main() {
 	}
 
 	if *jsonFile != "" {
-		if err := writeJSONOutput(nmapResult, *jsonFile); err != nil {
+		jsonPath := *jsonFile
+		if !filepath.IsAbs(jsonPath) {
+			jsonPath = filepath.Join(*artifactDir, *jsonFile)
+		}
+		if err := writeJSONOutput(nmapResult, jsonPath); err != nil {
 			log.Fatalf("Error writing JSON output: %v", err)
 		}
-		log.Printf("JSON results written to %s", *jsonFile)
+		log.Printf("JSON results written to %s", jsonPath)
 	}
 
 	if *csvFile != "" {
+		csvPath := *csvFile
+		if !filepath.IsAbs(csvPath) {
+			csvPath = filepath.Join(*artifactDir, *csvFile)
+		}
 		// For single host scans, try to get TLS config if k8s client is available
 		var tlsConfig *TLSSecurityProfile
 		if k8sClient != nil {
@@ -276,14 +302,14 @@ func main() {
 			}
 		}
 
-		if err := writeCSVOutput(singleResult, *csvFile); err != nil {
+		if err := writeCSVOutput(singleResult, csvPath); err != nil {
 			log.Fatalf("Error writing CSV output: %v", err)
 		}
-		log.Printf("CSV results written to %s", *csvFile)
+		log.Printf("CSV results written to %s", csvPath)
 
 		// Write scan errors CSV if there are any errors
 		if len(singleResult.ScanErrors) > 0 {
-			errorFilename := strings.TrimSuffix(*csvFile, filepath.Ext(*csvFile)) + "_errors.csv"
+			errorFilename := strings.TrimSuffix(csvPath, filepath.Ext(csvPath)) + "_errors.csv"
 			if err := writeScanErrorsCSV(singleResult, errorFilename); err != nil {
 				log.Printf("Error writing scan errors CSV: %v", err)
 			} else {
@@ -453,7 +479,7 @@ func checkCipherCompliance(gotCiphers []string, expectedCiphers []string) bool {
 	if len(gotCiphers) == 0 && len(expectedCiphers) > 0 {
 		return false
 	}
-	// TODO nmap prints some ciphersuites to specify that an "authenticated key exchange", AKE was used
+	// TODO nmap prints some cipher suites to specify that an "authenticated key exchange", AKE was used
 	// We need a way to map these cipher suites to the more generic version.
 	// for example TLS_AKE_WITH_AES_128_GCM_SHA256 (nmap) -> TLS_AES_128_GCM_SHA256 (openssl)
 

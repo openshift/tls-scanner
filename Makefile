@@ -1,4 +1,4 @@
-# Makefile for check-network
+# Makefile for tls-scanner
 
 # Binary name
 BINARY_NAME=tls-scanner
