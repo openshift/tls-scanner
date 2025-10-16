@@ -25,14 +25,10 @@ import (
 )
 
 func newK8sClient() (*K8sClient, error) {
-	config, err := rest.InClusterConfig()
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	config, err := clientcmd.BuildConfigFromFlags("", loadingRules.GetDefaultFilename())
 	if err != nil {
-		log.Printf("Not in cluster, trying kubeconfig")
-		kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
-		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-		if err != nil {
-			return nil, fmt.Errorf("could not get kubernetes config: %v", err)
-		}
+		return nil, fmt.Errorf("could not get kubernetes config: %v", err)
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
