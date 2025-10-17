@@ -515,7 +515,8 @@ func (k *K8sClient) getAllPodsInfo() []PodInfo {
 	}
 
 	infos := make([]PodInfo, 0, len(pods.Items))
-	for _, pod := range pods.Items {
+	for i := range pods.Items {
+		pod := pods.Items[i]
 		if pod.Status.PodIP == "" || pod.Status.Phase != v1.PodRunning {
 			continue
 		}
@@ -541,6 +542,7 @@ func (k *K8sClient) getAllPodsInfo() []PodInfo {
 				Image:      image,
 				IPs:        ips,
 				Containers: containerNames,
+				Pod:        &pod,
 			})
 		}
 	}

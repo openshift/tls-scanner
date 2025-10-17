@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	v1 "k8s.io/api/core/v1"
 )
 
 func main() {
@@ -391,31 +393,36 @@ func isNmapInstalled() bool {
 	return err == nil
 }
 
-func discoverOpenPorts(ip string) ([]int, error) {
-	log.Printf("Discovering open ports for %s...", ip)
+// discoverPortsFromPodSpec discovers open ports by reading the pod's specification from the Kubernetes API.
+// This is much more reliable and efficient than network scanning.
+func discoverPortsFromPodSpec(pod *v1.Pod) ([]int, error) {
+	log.Printf("Discovering ports for pod %s/%s from API server...", pod.Namespace, pod.Name)
 
-	// We scan all ports for this ip first to get the open ports
-	// for constructing the final results.
-	cmd := exec.Command("nmap", "-p-", "--open", "-T4", ip)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("nmap port discovery failed: %v", err)
-	}
-
-	re := regexp.MustCompile(`^(\d+)/tcp\s+open`)
 	var ports []int
-
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		matches := re.FindStringSubmatch(strings.TrimSpace(line))
-		if len(matches) > 1 {
-			if port, err := strconv.Atoi(matches[1]); err == nil {
-				ports = append(ports, port)
+	for _, container := range pod.Spec.Containers {
+		for _, port := range container.Ports {
+			// We only care about TCP ports for TLS scanning
+			if port.Protocol == v1.ProtocolTCP {
+				ports = append(ports, int(port.ContainerPort))
 			}
 		}
 	}
 
-	log.Printf("Found %d open ports for %s: %v", len(ports), ip, ports)
+	// Also check init containers, just in case they expose a port
+	for _, container := range pod.Spec.InitContainers {
+		for _, port := range container.Ports {
+			if port.Protocol == v1.ProtocolTCP {
+				ports = append(ports, int(port.ContainerPort))
+			}
+		}
+	}
+
+	if len(ports) == 0 {
+		log.Printf("Found 0 declared TCP ports for pod %s/%s.", pod.Namespace, pod.Name)
+	} else {
+		log.Printf("Found %d declared TCP ports for pod %s/%s: %v", len(ports), pod.Namespace, pod.Name, ports)
+	}
+
 	return ports, nil
 }
 
@@ -651,7 +658,7 @@ func performClusterScan(allPodsInfo []PodInfo, concurrentScans int, k8sClient *K
 }
 
 func scanIP(k8sClient *K8sClient, ip string, pod PodInfo, tlsSecurityProfile *TLSSecurityProfile) IPResult {
-	openPorts, err := discoverOpenPorts(ip)
+	openPorts, err := discoverPortsFromPodSpec(pod.Pod)
 	if err != nil {
 		return IPResult{
 			IP:     ip,
@@ -920,3 +927,4 @@ func scanHostPorts(host string, ports []string) IPResult {
 
 	return ipResult
 }
+

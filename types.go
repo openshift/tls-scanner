@@ -106,6 +106,7 @@ type PodInfo struct {
 	Image      string   // Container image
 	IPs        []string // List of IPs assigned to the pod
 	Containers []string // List of container names
+	Pod        *v1.Pod  `json:"-"` // The actual pod object
 }
 
 type PortResult struct {
