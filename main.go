@@ -691,9 +691,11 @@ func scanIP(k8sClient *K8sClient, ip string, pod PodInfo, tlsSecurityProfile *TL
 	}
 	portSpec := strings.Join(portStrings, ",")
 
-	log.Printf("Scanning %d SSL ciphers on %s for ports: %s", len(openPorts), ip, portSpec)
+	log.Printf("Scanning %s ports on %s", portSpec, ip)
 	cmd := exec.Command("nmap", "-sV", "--script", "ssl-enum-ciphers", "-p", portSpec, "-oX", "-", ip)
+	log.Printf("Running command: %s", cmd.String())
 	output, err := cmd.CombinedOutput()
+	log.Printf("Command output: %s", string(output))
 	if err != nil {
 		ipResult.Error = fmt.Sprintf("nmap scan failed: %v", err)
 		// Still create PortResult entries for CSV consistency
