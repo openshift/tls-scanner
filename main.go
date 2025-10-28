@@ -235,7 +235,7 @@ func main() {
 
 	log.Printf("Found Nmap. Starting scan on %s:%s...\n\n", *host, *port)
 
-	cmd := exec.Command("nmap", "-sV", "--script", "ssl-enum-ciphers", "-p", *port, "-oX", "-", *host)
+	cmd := exec.Command("nmap", "-Pn", "-sV", "--script", "ssl-enum-ciphers", "-p", *port, "-oX", "-", *host)
 
 	output, err := cmd.CombinedOutput() // CombinedOutput captures both stdout and stderr.
 	if err != nil {
@@ -692,7 +692,7 @@ func scanIP(k8sClient *K8sClient, ip string, pod PodInfo, tlsSecurityProfile *TL
 	portSpec := strings.Join(portStrings, ",")
 
 	log.Printf("Scanning %s ports on %s", portSpec, ip)
-	cmd := exec.Command("nmap", "-sV", "--script", "ssl-enum-ciphers", "-p", portSpec, "-oX", "-", ip)
+	cmd := exec.Command("nmap", "-Pn", "-sV", "--script", "ssl-enum-ciphers", "-p", portSpec, "-oX", "-", ip)
 	log.Printf("Running command: %s", cmd.String())
 	output, err := cmd.CombinedOutput()
 	log.Printf("Command output: %s", string(output))
@@ -879,7 +879,7 @@ func scanHostPorts(host string, ports []string) IPResult {
 		ipResult.OpenPorts = append(ipResult.OpenPorts, p)
 	}
 
-	cmd := exec.Command("nmap", "-sV", "--script", "ssl-enum-ciphers", "-p", portSpec, "-oX", "-", host)
+	cmd := exec.Command("nmap", "-Pn", "-sV", "--script", "ssl-enum-ciphers", "-p", portSpec, "-oX", "-", host)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		ipResult.Error = fmt.Sprintf("nmap scan failed: %v", err)
