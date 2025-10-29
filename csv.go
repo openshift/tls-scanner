@@ -89,22 +89,30 @@ func writeCSVOutput(results ScanResults, filename string) error {
 
 			port := strconv.Itoa(targetPort)
 
-			// Skip processing this row if no TLS data was found - improves performance
-			if len(portResult.TlsCiphers) == 0 && len(portResult.TlsVersions) == 0 {
-				log.Printf("Skipping CSV row for %s:%s - no TLS data detected", ipAddress, port)
-				continue
+			// Create row data
+			podName := "N/A"
+			namespace := "N/A"
+			if ipResult.Pod != nil {
+				podName = ipResult.Pod.Name
+				namespace = ipResult.Pod.Namespace
 			}
 
-			// Create row data
+			componentName := "N/A"
+			componentMaintainer := "N/A"
+			if ipResult.OpenshiftComponent != nil {
+				componentName = ipResult.OpenshiftComponent.Component
+				componentMaintainer = ipResult.OpenshiftComponent.MaintainerComponent
+			}
+
 			rowData := map[string]string{
 				"IP":                            ipAddress,
 				"Port":                          port,
 				"Protocol":                      stringOrNA(portResult.Protocol),
 				"Service":                       stringOrNA(portResult.Service),
-				"Pod Name":                      ipResult.Pod.Name,
-				"Namespace":                     ipResult.Pod.Namespace,
-				"Component Name":                ipResult.OpenshiftComponent.Component,
-				"Component Maintainer":          ipResult.OpenshiftComponent.MaintainerComponent,
+				"Pod Name":                      podName,
+				"Namespace":                     namespace,
+				"Component Name":                componentName,
+				"Component Maintainer":          componentMaintainer,
 				"Process":                       stringOrNA(portResult.ProcessName),
 				"TLS Ciphers":                   joinOrNA(portResult.TlsCiphers),
 				"TLS Version":                   joinOrNA(portResult.TlsVersions),
