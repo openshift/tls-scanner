@@ -118,18 +118,31 @@ func writeCSVOutput(results ScanResults, filename string) error {
 				"TLS Version":                   joinOrNA(portResult.TlsVersions),
 				"Ingress Configured Profile":    ingressProfile,
 				"Ingress Configured MinVersion": ingressMinVersion,
-				"Ingress MinVersion Compliance": strconv.FormatBool(portResult.IngressTLSConfigCompliance.Version),
+				"Ingress MinVersion Compliance": "N/A",
 				"Ingress Configured Ciphers":    ingressCiphers,
-				"Ingress Cipher Compliance":     strconv.FormatBool(portResult.IngressTLSConfigCompliance.Ciphers),
+				"Ingress Cipher Compliance":     "N/A",
 				"API Configured Profile":        apiProfile,
 				"API Configured MinVersion":     apiMinVersion,
-				"API MinVersion Compliance":     strconv.FormatBool(portResult.APIServerTLSConfigCompliance.Version),
+				"API MinVersion Compliance":     "N/A",
 				"API Configured Ciphers":        apiCiphers,
-				"API Cipher Compliance":         strconv.FormatBool(portResult.APIServerTLSConfigCompliance.Ciphers),
+				"API Cipher Compliance":         "N/A",
 				"Kubelet Configured MinVersion": kubeletMinVersion,
-				"Kubelet MinVersion Compliance": strconv.FormatBool(portResult.KubeletTLSConfigCompliance.Version),
+				"Kubelet MinVersion Compliance": "N/A",
 				"Kubelet Configured Ciphers":    kubeletCiphers,
-				"Kubelet Cipher Compliance":     strconv.FormatBool(portResult.KubeletTLSConfigCompliance.Ciphers),
+				"Kubelet Cipher Compliance":     "N/A",
+			}
+
+			if portResult.IngressTLSConfigCompliance != nil {
+				rowData["Ingress MinVersion Compliance"] = strconv.FormatBool(portResult.IngressTLSConfigCompliance.Version)
+				rowData["Ingress Cipher Compliance"] = strconv.FormatBool(portResult.IngressTLSConfigCompliance.Ciphers)
+			}
+			if portResult.APIServerTLSConfigCompliance != nil {
+				rowData["API MinVersion Compliance"] = strconv.FormatBool(portResult.APIServerTLSConfigCompliance.Version)
+				rowData["API Cipher Compliance"] = strconv.FormatBool(portResult.APIServerTLSConfigCompliance.Ciphers)
+			}
+			if portResult.KubeletTLSConfigCompliance != nil {
+				rowData["Kubelet MinVersion Compliance"] = strconv.FormatBool(portResult.KubeletTLSConfigCompliance.Version)
+				rowData["Kubelet Cipher Compliance"] = strconv.FormatBool(portResult.KubeletTLSConfigCompliance.Ciphers)
 			}
 
 			row := buildCSVRow(csvColumns, rowData)
