@@ -531,14 +531,8 @@ func (k *K8sClient) getAllPodsInfo() []PodInfo {
 		}
 
 		var ips []string
-		if pod.Spec.HostNetwork {
-			if pod.Status.HostIP != "" {
-				ips = []string{pod.Status.HostIP}
-			}
-		} else {
-			for _, podIP := range pod.Status.PodIPs {
-				ips = append(ips, podIP.IP)
-			}
+		if pod.Status.HostIP != "" {
+			ips = []string{pod.Status.HostIP}
 		}
 
 		if len(ips) > 0 {
