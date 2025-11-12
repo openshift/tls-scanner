@@ -54,6 +54,8 @@ The deployment script automatically:
 - `-port <port>` - Target port to scan (default: 443)  
 - `-iplist <file>` - File containing list of IPs to scan (one per line)
 - `-all-pods` - Scan all pods in the cluster (requires cluster access)
+- `-component-filter <names>` - Filter pods by component name (comma-separated, used with -all-pods)
+- `-namespace-filter <names>` - Filter pods by namespace (comma-separated, used with -all-pods)
 - `-json <file>` - Output results in JSON format to specified file
 - `-csv <file>` - Output results in CSV format to specified file
 - `-junitxml <file>` - Output results in JUnit XML format to specified file
