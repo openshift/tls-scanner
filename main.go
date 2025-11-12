@@ -25,6 +25,7 @@ func main() {
 	junitFile := flag.String("junit-file", "", "Output results in JUnit XML format to specified file in artifact-dir")
 	concurrentScans := flag.Int("j", 1, "Number of concurrent scans to run in parallel (speeds up large IP lists significantly!)")
 	allPods := flag.Bool("all-pods", false, "Scan all pods in the current namespace (overrides --iplist and --host)")
+	componentFilter := flag.String("component-filter", "", "Filter pods by a comma-separated list of component names (only used with --all-pods)")
 	targets := flag.String("targets", "", "A comma-separated list of host:port targets to scan")
 	limitIPs := flag.Int("limit-ips", 0, "Limit the number of IPs to scan for testing purposes (0 = no limit)")
 	logFile := flag.String("log-file", "", "Redirect all log output to the specified file")
@@ -138,6 +139,30 @@ func main() {
 		}
 
 		allPodsInfo = k8sClient.getAllPodsInfo() // get pod ip to pod name mapping
+
+		if *componentFilter != "" {
+			log.Printf("Filtering pods by component name(s): %s", *componentFilter)
+			filterComponents := strings.Split(*componentFilter, ",")
+			filterSet := make(map[string]struct{})
+			for _, c := range filterComponents {
+				filterSet[strings.TrimSpace(c)] = struct{}{}
+			}
+
+			var filteredPods []PodInfo
+			for _, pod := range allPodsInfo {
+				component, err := k8sClient.getOpenshiftComponentFromImage(pod.Image)
+				if err != nil {
+					log.Printf("Warning: could not get component for image %s: %v", pod.Image, err)
+					continue
+				}
+
+				if _, ok := filterSet[component.Component]; ok {
+					filteredPods = append(filteredPods, pod)
+				}
+			}
+			log.Printf("Filtered pods: %d remaining out of %d", len(filteredPods), len(allPodsInfo))
+			allPodsInfo = filteredPods
+		}
 
 		log.Printf("Found %d pods to scan from the cluster.", len(allPodsInfo))
 
@@ -928,4 +953,3 @@ func scanHostPorts(host string, ports []string) IPResult {
 
 	return ipResult
 }
-
