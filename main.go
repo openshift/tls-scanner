@@ -26,6 +26,7 @@ func main() {
 	concurrentScans := flag.Int("j", 1, "Number of concurrent scans to run in parallel (speeds up large IP lists significantly!)")
 	allPods := flag.Bool("all-pods", false, "Scan all pods in the current namespace (overrides --iplist and --host)")
 	componentFilter := flag.String("component-filter", "", "Filter pods by a comma-separated list of component names (only used with --all-pods)")
+	namespaceFilter := flag.String("namespace-filter", "", "Filter pods by a comma-separated list of namespaces (only used with --all-pods)")
 	targets := flag.String("targets", "", "A comma-separated list of host:port targets to scan")
 	limitIPs := flag.Int("limit-ips", 0, "Limit the number of IPs to scan for testing purposes (0 = no limit)")
 	logFile := flag.String("log-file", "", "Redirect all log output to the specified file")
@@ -161,6 +162,24 @@ func main() {
 				}
 			}
 			log.Printf("Filtered pods: %d remaining out of %d", len(filteredPods), len(allPodsInfo))
+			allPodsInfo = filteredPods
+		}
+
+		if *namespaceFilter != "" {
+			log.Printf("Filtering pods by namespace(s): %s", *namespaceFilter)
+			filterNamespaces := strings.Split(*namespaceFilter, ",")
+			filterSet := make(map[string]struct{})
+			for _, ns := range filterNamespaces {
+				filterSet[strings.TrimSpace(ns)] = struct{}{}
+			}
+
+			var filteredPods []PodInfo
+			for _, pod := range allPodsInfo {
+				if _, ok := filterSet[pod.Namespace]; ok {
+					filteredPods = append(filteredPods, pod)
+				}
+			}
+			log.Printf("Filtered pods by namespace: %d remaining out of %d", len(filteredPods), len(allPodsInfo))
 			allPodsInfo = filteredPods
 		}
 
