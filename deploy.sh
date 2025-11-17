@@ -110,7 +110,7 @@ deploy_scanner_job() {
     fi
     
     # Substitute environment variables in the template and apply it
-    envsubst < "$JOB_TEMPLATE" | oc apply -f -
+    sed -e "s|\${SCANNER_IMAGE}|${SCANNER_IMAGE}|g" -e "s|\${NAMESPACE}|${NAMESPACE}|g" -e "s|\${JOB_NAME}|${JOB_NAME}|g" "$JOB_TEMPLATE" | oc apply -f -
     check_error "Applying Job manifest"
     
     echo "--> Scanner Job '${JOB_NAME}' deployed."
@@ -130,8 +130,8 @@ cleanup() {
     oc delete job "$JOB_NAME" -n "$NAMESPACE" --ignore-not-found=true
 
     echo "--> Removing RBAC permissions..."
-    oc adm policy remove-cluster-role-from-user cluster-reader -z default -n "$NAMESPACE" --ignore-not-found=true
-    oc adm policy remove-scc-from-user privileged -z default -n "$NAMESPACE" --ignore-not-found=true
+    oc adm policy remove-cluster-role-from-user cluster-reader -z default -n "$NAMESPACE" || true
+    oc adm policy remove-scc-from-user privileged -z default -n "$NAMESPACE" || true
 
     echo "--> Cleanup complete."
 }
