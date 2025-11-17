@@ -4,46 +4,96 @@ A network security scanner for OpenShift/Kubernetes clusters that combines nmap 
 
 ## Prerequisites
 
-- **OpenShift/Kubernetes cluster access** - For cluster scanning features
-- **Sufficient privileges** - Pod exec and cluster-reader permissions for full functionality
+- **Go environment** - For building the scanner binary.
+- **Container tool** - Docker or Podman for building and pushing the scanner image.
+- **OpenShift/Kubernetes cluster access** - `oc` or `kubectl` configured to point to your target cluster.
+- **Sufficient privileges** - Permissions to create Jobs, and grant `cluster-reader` and `privileged` SCC to a ServiceAccount.
 
-## Installation & Setup
+## Installation & Usage
 
-### Local Usage
+The scanner is designed to be run from within the cluster it is scanning. This is the most reliable way to ensure network access to all pods. The included `deploy.sh` script automates the build and deployment process.
 
-1. **Build the scanner:**
-   ```bash
-   go build -o tls-scanner .
-   ```
+### CI/CD Workflow (Recommended)
 
-2. **Set up cluster access:**
-   ```bash
-   export KUBECONFIG=/path/to/your/kubeconfig
-   # KUBECONFIG must point to the target OpenShift/Kubernetes cluster you want to scan
-   ```
+This is the recommended approach for automated scanning in an ephemeral test environment.
 
-### OpenShift Deployment (Recommended)
+#### 1. Configure Environment
 
-For comprehensive cluster scanning, deploy as a privileged pod:
+Set these environment variables in your CI job:
+
+- `SCANNER_IMAGE`: The full tag of the image to build and push (e.g., `quay.io/my-org/tls-scanner:latest`).
+- `NAMESPACE`: The OpenShift/Kubernetes namespace to run the scan in (e.g., `scanner-project`).
+- `KUBECONFIG`: Path to the kubeconfig file for the ephemeral test cluster.
+
+#### 2. Build and Push the Image
+
+Your CI pipeline needs to be authenticated with your container registry.
 
 ```bash
-export KUBECONFIG=/path/to/your/kubeconfig
-# Set target project
-oc new-project scanner-project  # or oc project <existing-project>
+# Build the binary and container image
+./deploy.sh build
 
-# Deploy scanner pod with all necessary permissions
-./deploy.sh
+# Push the image to your registry
+./deploy.sh push
 ```
 
-The deployment script automatically:
-- Creates privileged pod with cluster access
-- Grants necessary RBAC permissions (cluster-reader, pod-exec)  
-- Builds and deploys scanner image
-- Runs CSV+Json scan with 15 concurrent workers
+#### 3. Deploy the Scan Job
 
-## Usage
+This step creates the necessary RBAC permissions and deploys a Kubernetes Job into the ephemeral cluster.
+
+```bash
+./deploy.sh deploy
+```
+
+#### 4. Wait for Completion and Collect Results
+
+The CI job must wait for the Kubernetes Job to complete and then copy the artifacts out.
+
+```bash
+# Wait for the job to finish (adjust timeout as needed)
+kubectl wait --for=condition=complete job/tls-scanner-job -n "$NAMESPACE" --timeout=15m
+
+# Get the name of the pod created by the job
+POD_NAME=$(kubectl get pods -n "$NAMESPACE" -l job-name=tls-scanner-job -o jsonpath='{.items[0].metadata.name}')
+
+# Create a local directory for artifacts
+mkdir -p ./artifacts
+
+# Copy all result files from the pod
+kubectl cp "${NAMESPACE}/${POD_NAME}:/artifacts/." "./artifacts/"
+```
+
+Your `./artifacts` directory will now contain `results.json`, `results.csv`, and `scan.log`.
+
+#### 5. Cleanup
+
+Remove the scanner Job and associated RBAC permissions from the cluster.
+
+```bash
+./deploy.sh cleanup
+```
+
+### Manual Usage
+
+You can also run the steps manually.
+
+1.  **Build the image:** `export SCANNER_IMAGE="your-registry/image:tag"` and run `./deploy.sh build`.
+2.  **Push the image:** `./deploy.sh push`.
+3.  **Deploy the job:** `export NAMESPACE="your-namespace"` and run `./deploy.sh deploy`.
+4.  **Monitor and retrieve results** as shown in the CI workflow.
+5.  **Clean up** with `./deploy.sh cleanup`.
+
+### `deploy.sh` Script Actions
+
+-   `build`: Builds the `tls-scanner` binary and container image.
+-   `push`: Pushes the container image to the registry specified by `$SCANNER_IMAGE`.
+-   `deploy`: Deploys the scanner Kubernetes Job to the cluster specified by `$KUBECONFIG` and `$NAMESPACE`.
+-   `cleanup`: Removes the scanner Job and RBAC resources.
+-   `full-deploy` (or no action): Runs `build`, `push`, and `deploy`.
 
 ### Command Line Options
+
+The scanner binary accepts the following command-line options. These are configured in the `scanner-job.yaml.template` file.
 
 ```bash
 ./tls-scanner [OPTIONS]
@@ -52,100 +102,11 @@ The deployment script automatically:
 **Options:**
 - `-host <ip>` - Target host/IP to scan (default: 127.0.0.1)
 - `-port <port>` - Target port to scan (default: 443)  
-- `-iplist <file>` - File containing list of IPs to scan (one per line)
 - `-all-pods` - Scan all pods in the cluster (requires cluster access)
 - `-component-filter <names>` - Filter pods by component name (comma-separated, used with -all-pods)
 - `-namespace-filter <names>` - Filter pods by namespace (comma-separated, used with -all-pods)
-- `-json <file>` - Output results in JSON format to specified file
-- `-csv <file>` - Output results in CSV format to specified file
-- `-junitxml <file>` - Output results in JUnit XML format to specified file
-- `-csv-columns <spec>` - Control CSV columns: 'all', 'default', 'minimal', or comma-separated list (default: 'default')
-- `-service-mapping <file>` - Generate service-to-IP mapping JSON file (auto-generated for cluster scans)
+- `-json-file <file>` - Output results in JSON format to specified file
+- `-csv-file <file>` - Output results in CSV format to specified file
+- `-junit-file <file>` - Output results in JUnit XML format to specified file
+- `-log-file <file>` - Redirect all log output to the specified file.
 - `-j <num>` - Number of concurrent workers (default: 1, max recommended: 50)
-
-### Usage Examples
-
-**Scan a single host:**
-```bash
-./tls-scanner -host 10.0.0.1 -port 443
-```
-
-**Scan multiple IPs from file:**
-```bash
-echo -e "10.0.0.1\n10.0.0.2\n10.0.0.3" > targets.txt
-./tls-scanner -iplist targets.txt -j 5
-```
-
-**Scan entire OpenShift cluster (JSON output):**
-```bash
-export KUBECONFIG=/path/to/cluster/config
-./tls-scanner -all-pods -json results.json -j 12
-```
-
-**CSV security scan with default columns:**
-```bash
-./tls-scanner -all-pods -csv security-scan-$(date +%Y%m%d).csv -j 15
-```
-
-**Full security analysis with all columns:**
-```bash  
-./tls-scanner -all-pods -csv full-scan-$(date +%Y%m%d).csv -csv-columns all -j 15
-```
-
-**Minimal TLS analysis:**
-```bash
-./tls-scanner -all-pods -csv minimal-$(date +%Y%m%d).csv -csv-columns minimal -j 15
-```
-
-**Custom column selection:**
-```bash
-./tls-scanner -all-pods -csv custom-$(date +%Y%m%d).csv -csv-columns "IP Address,Port,Service,TLS Version,Cipher Suites,Process Name" -j 15
-```
-
-**Json+CSV security scan (auto-generates service mapping):**
-```bash
-./tls-scanner -all-pods -csv security-scan-$(date +%Y%m%d).csv -json security-scan-$(date +%Y%m%d).json -j 15
-```
-
-**JUnit XML output for CI/CD integration:**
-```bash
-./tls-scanner -all-pods -junitxml results.xml -j 15
-```
-
-### Required Permissions
-
-The scanner requires these RBAC permissions:
-
-```yaml
-# Cluster-wide read access
-- pods (get, list)
-- pods/exec (create)
-
-# ClusterRoles granted:
-- cluster-reader
-- pod-exec-reader (custom)
-
-# SecurityContextConstraints:
-- privileged (for comprehensive scanning)
-```
-`./deploy.sh` automatically sets these permissions for you.
-
-## Configuration
-
-### Environment Variables
-- `KUBECONFIG` - **Required** - Path to kubeconfig file for target cluster
-  
-```mermaid
-graph LR
-    subgraph "Architecture"
-        subgraph "Scanning Workflow"
-            A[1. IP Discovery] --> B[2. Port Scan]
-            B --> C[3. SSL Analysis]
-            C --> D[4. Component Analysis]
-            D --> E[5. Query Process ID]
-            E --> F[6. Aggregate Results]
-        end
-    end
-
-```
-  

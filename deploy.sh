@@ -1,40 +1,23 @@
 #!/bin/bash
-
 # A script to build, deploy, and run the OpenShift scanner application.
 #
-# Usage: ./deploy.sh <junit-xml-output-path>
-#
-# This script will create the specified JUnit XML file.
-
-if [ -z "$1" ]; then
-    echo "Usage: $0 <junit-xml-output-path>"
-    echo "e.g., $0 /path/to/artifacts/junit.xml"
-    exit 1
-fi
-
-JUNIT_OUTPUT_PATH="$1"
-JUNIT_OUTPUT_DIR=$(dirname "$JUNIT_OUTPUT_PATH")
+# Usage: ./deploy.sh [action]
+# Actions:
+#   build          - Build the container image.
+#   push           - Push the container image to a registry.
+#   deploy         - Deploy the scanner as a Kubernetes Job.
+#   cleanup        - Remove all scanner-related resources.
+#   full-deploy    - Run build, push, and deploy actions.
+#   (no action)    - Run a full-deploy and then cleanup.
 
 # --- Configuration ---
-APP_NAME="scanner-app"
-
-# --- Get Current Project ---
-CURRENT_PROJECT=$(oc project -q)
-if [ -z "$CURRENT_PROJECT" ]; then
-    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    echo "Error: Could not determine current OpenShift project."
-    echo "Please set a project using 'oc project <project-name>'"
-    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    exit 1
-fi
-echo "--> Operating in project: $CURRENT_PROJECT"
-
-# --- CI/CD Environment Setup ---
-echo "--> Artifacts will be stored in: $JUNIT_OUTPUT_DIR"
-# Create artifact directories
-mkdir -p "$JUNIT_OUTPUT_DIR"
-check_error "Creating artifact directory"
-
+APP_NAME="tls-scanner"
+# Default image name, can be overridden by environment variable SCANNER_IMAGE
+SCANNER_IMAGE=${SCANNER_IMAGE:-"quay.io/user/tls-scanner:latest"}
+# Namespace to deploy to, can be overridden by NAMESPACE env var
+NAMESPACE=${NAMESPACE:-$(oc project -q)}
+JOB_TEMPLATE="scanner-job.yaml.template"
+JOB_NAME="tls-scanner-job"
 
 # --- Functions ---
 
@@ -47,7 +30,6 @@ print_header() {
 
 # Function to check for errors and exit if one occurs
 check_error() {
-    # $? is the exit code of the last command
     if [ $? -ne 0 ]; then
         echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
         echo "An error occurred during: '$1'"
@@ -57,233 +39,141 @@ check_error() {
     fi
 }
 
-# Function to clean up existing resources before starting
-cleanup() {
-    print_header "Step 0: Cleaning Up Previous Deployments"
-    echo "--> Deleting existing resources for '$APP_NAME' in project '$CURRENT_PROJECT' (if they exist)..."
-    oc delete deployment "$APP_NAME" -n "$CURRENT_PROJECT" --ignore-not-found=true
-    oc delete service "$APP_NAME" -n "$CURRENT_PROJECT" --ignore-not-found=true
-    echo "--> Deleting existing builds for '$APP_NAME'..."
-    oc delete builds -l buildconfig="$APP_NAME" -n "$CURRENT_PROJECT" --ignore-not-found=true
-    oc delete buildconfig "$APP_NAME" -n "$CURRENT_PROJECT" --ignore-not-found=true
-    oc delete imagestream "$APP_NAME" -n "$CURRENT_PROJECT" --ignore-not-found=true
-    oc delete secret pull-secret -n "$CURRENT_PROJECT" --ignore-not-found=true
-    echo "--> Removing pod-exec-reader role from default service account..."
-    oc adm policy remove-cluster-role-from-user pod-exec-reader -z default -n "$CURRENT_PROJECT" --ignore-not-found=true
-    echo "--> Removing privileged SCC from default service account..."
-    oc adm policy remove-scc-from-user privileged -z default -n "$CURRENT_PROJECT" --ignore-not-found=true
-    echo "--> Deleting pod-exec-reader cluster role..."
-    oc delete clusterrole pod-exec-reader --ignore-not-found=true
-    echo "--> Deleting ingress-reader role and binding..."
-    oc delete role ingress-reader -n openshift-ingress-operator --ignore-not-found=true
-    oc delete rolebinding read-ingress-from-project -n openshift-ingress-operator --ignore-not-found=true
-    echo "Cleanup complete."
+# Function to check for required commands
+check_command() {
+    if ! command -v "$1" &> /dev/null; then
+        echo "Error: Required command '$1' is not installed or not in PATH."
+        exit 1
+    fi
 }
 
+build_image() {
+    print_header "Step 1: Building Scanner Image"
+    echo "--> Building image: ${SCANNER_IMAGE}"
 
-# --- Main Script ---
-
-# 0. Clean up any previous runs
-cleanup
-
-# 1. Build and Deploy the Scanner
-print_header "Step 1: Building and Deploying the Scanner"
-
-echo "--> Creating new build configuration..."
-oc new-build --name="$APP_NAME" --strategy=docker --binary
-check_error "oc new-build"
-
-echo "--> Setting resource limits for the build..."
-oc patch bc/"$APP_NAME" -p '{"spec":{"resources":{"limits":{"memory":"8Gi","ephemeral-storage":"8Gi"},"requests":{"memory":"4Gi","ephemeral-storage":"4Gi"}}}}'
-check_error "oc patch resources"
-
-echo "--> Starting the build (this may take a few minutes)..."
-oc start-build "$APP_NAME" --from-dir=. --follow
-check_error "oc start-build"
-
-echo "--> Deploying the new application with privileged security context..."
-# Create a privileged deployment instead of using oc new-app
-cat <<EOF | oc apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: $APP_NAME
-  labels:
-    app: $APP_NAME
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      deployment: $APP_NAME
-  template:
-    metadata:
-      labels:
-        deployment: $APP_NAME
-    spec:
-      serviceAccountName: default
-      securityContext:
-        runAsUser: 0
-        fsGroup: 0
-      containers:
-      - name: scanner
-        image: image-registry.openshift-image-registry.svc:5000/$CURRENT_PROJECT/$APP_NAME:latest
-        command: ["sleep", "infinity"]
-        securityContext:
-          privileged: true
-          runAsUser: 0
-          allowPrivilegeEscalation: true
-          capabilities:
-            add:
-            - SYS_ADMIN
-            - NET_ADMIN
-            - SYS_PTRACE
-        volumeMounts:
-        - name: host-root
-          mountPath: /host
-          readOnly: true
-        env:
-        - name: HOME
-          value: /root
-      volumes:
-      - name: host-root
-        hostPath:
-          path: /
-          type: Directory
-EOF
-check_error "Creating privileged deployment"
-
-echo "--> Granting permissions to the service account..."
-oc adm policy add-cluster-role-to-user cluster-reader -z default -n "$CURRENT_PROJECT"
-check_error "Granting cluster-reader permissions"
-
-echo "--> Creating Role and RoleBinding to read IngressController status..."
-cat <<EOF | oc apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: ingress-reader
-  namespace: openshift-ingress-operator
-rules:
-- apiGroups: ["operator.openshift.io"]
-  resources: ["ingresscontrollers"]
-  verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: read-ingress-from-project
-  namespace: openshift-ingress-operator
-subjects:
-- kind: ServiceAccount
-  name: default
-  namespace: $CURRENT_PROJECT
-roleRef:
-  kind: Role
-  name: ingress-reader
-  apiGroup: rbac.authorization.k8s.io
-EOF
-check_error "Creating ingress-reader Role and RoleBinding"
-
-echo "--> Copying global pull secret..."
-oc get secret pull-secret -n openshift-config -o yaml | sed "s/namespace: .*/namespace: $CURRENT_PROJECT/" | oc apply -n "$CURRENT_PROJECT" -f -
-check_error "Copying pull secret"
-
-echo "--> Linking default service account to global pull secret..."
-oc secrets link default pull-secret --for=pull -n "$CURRENT_PROJECT"
-check_error "Linking pull secret"
-
-echo "--> Registry authentication configured via pull-secret linkage"
-
-echo "--> Creating ClusterRole for pod exec..."
-cat <<EOF | oc apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: pod-exec-reader
-rules:
-- apiGroups: [""]
-  resources: ["pods/exec"]
-  verbs: ["create"]
-- apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["get"]
-EOF
-check_error "Creating pod-exec-reader ClusterRole"
-
-echo "--> Binding pod-exec-reader role to default service account..."
-oc adm policy add-cluster-role-to-user pod-exec-reader -z default -n "$CURRENT_PROJECT"
-check_error "Binding pod-exec-reader role"
-
-echo "--> Adding privileged SCC to service account for podman operations..."
-oc adm policy add-scc-to-user privileged -z default -n "$CURRENT_PROJECT"
-check_error "Adding privileged SCC"
-
-echo "--> Waiting for the deployment to become ready..."
-oc wait --for=condition=available --timeout=300s deployment/"$APP_NAME" -n "$CURRENT_PROJECT"
-check_error "Waiting for deployment"
-echo "Scanner pod is now running."
-
-# 2. Prepare and Run the Scan
-print_header "Step 2: Preparing and Running the Scan"
-
-echo "--> Getting the current scanner pod name..."
-
-# Loop to wait for the pod to be available and get its name
-POD_NAME=""
-for i in {1..10}; do
-    echo "--> Attempt $i: Looking for pod with label deployment=$APP_NAME..."
-    POD_NAME=$(oc get pods -n "$CURRENT_PROJECT" -l deployment="$APP_NAME" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-    if [ -n "$POD_NAME" ]; then
-        echo "    Found Pod Name: $POD_NAME"
-        break
+    # Use 'docker' or 'podman' based on what's available
+    BUILD_CMD="docker"
+    if command -v podman &> /dev/null; then
+        BUILD_CMD="podman"
     fi
-    echo "    Pod not found yet. Waiting 5 seconds..."
-    sleep 5
-done
+    check_command $BUILD_CMD
 
-if [ -z "$POD_NAME" ]; then
-    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    echo "Error: Could not find a running pod for deployment '$APP_NAME' after several attempts."
-    echo "Listing all pods in project '$CURRENT_PROJECT' for debugging:"
-    oc get pods -n "$CURRENT_PROJECT" --show-labels
-    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    exit 1
-fi
+    # Build the Go binary statically
+    go build -o tls-scanner .
+    check_error "Go build"
 
-echo "--> Executing the scan in the background inside the pod..."
-# Define artifact paths inside the pod
-SCAN_DATE=$(date +%Y%m%d)
-POD_ARTIFACT_DIR="/tmp/artifacts"
-POD_JUNIT_FILE="junit-tls-scan.xml"
-POD_LOG_FILE="logs.log"
+    $BUILD_CMD build -t "${SCANNER_IMAGE}" .
+    check_error "Container image build"
+    echo "--> Image build complete."
+}
 
-# Create artifact dir in pod
-oc exec -n "$CURRENT_PROJECT" "$POD_NAME" -- mkdir -p "$POD_ARTIFACT_DIR"
-check_error "Creating artifact dir in pod"
+push_image() {
+    print_header "Step 2: Pushing Scanner Image"
+    echo "--> Pushing image: ${SCANNER_IMAGE}"
+    
+    # Use 'docker' or 'podman' based on what's available
+    BUILD_CMD="docker"
+    if command -v podman &> /dev/null; then
+        BUILD_CMD="podman"
+    fi
+    check_command $BUILD_CMD
 
-# The command is run in the background of the script, but synchronously inside the pod
-oc exec -n "$CURRENT_PROJECT" "$POD_NAME" -- /usr/local/bin/tls-scanner \
-    -all-pods \
-    -junitxml "$POD_ARTIFACT_DIR/$POD_JUNIT_FILE" \
-    -j 12
-check_error "Executing scan"
+    $BUILD_CMD push "${SCANNER_IMAGE}"
+    check_error "Image push"
+    echo "--> Image push complete."
+}
 
-print_header "Step 3: Retrieving and Displaying Results"
+deploy_scanner_job() {
+    print_header "Step 3: Deploying Scanner Job"
+    check_command "oc"
+    check_command "envsubst"
 
-echo "--> Copying debug log from the pod..."
-oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/$POD_LOG_FILE" "$JUNIT_OUTPUT_DIR/logs.log"
-check_error "Copying debug log from pod"
+    if [ -z "$NAMESPACE" ]; then
+        echo "Error: Could not determine OpenShift project. Please set NAMESPACE or run 'oc project <name>'."
+        exit 1
+    fi
+    echo "--> Deploying to namespace: $NAMESPACE"
 
-echo "--> Copying JUnit XML results from the pod..."
-oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/$POD_JUNIT_FILE" "$JUNIT_OUTPUT_PATH"
-check_error "Copying JUnit XML results from pod"
+    echo "--> Creating necessary RBAC permissions..."
+    # Grant cluster-reader to the default service account in the target namespace
+    oc adm policy add-cluster-role-to-user cluster-reader -z default -n "$NAMESPACE"
+    check_error "Granting cluster-reader"
+    
+    # The pod exec role is necessary for detailed process scanning within pods
+    oc adm policy add-scc-to-user privileged -z default -n "$NAMESPACE"
+    check_error "Adding privileged SCC"
 
-echo "--> Copying scan error results from the pod (if they exist)..."
-oc cp "$CURRENT_PROJECT/$POD_NAME:$POD_ARTIFACT_DIR/security-scan-${SCAN_DATE}_errors.csv" "$JUNIT_OUTPUT_DIR/security-scan-${SCAN_DATE}_errors.csv" 2>/dev/null || echo "   No scan errors file found (this is normal if no scan errors occurred)"
+    echo "--> Applying Job manifest from template: ${JOB_TEMPLATE}"
+    if [ ! -f "$JOB_TEMPLATE" ]; then
+        echo "Error: Job template file not found: ${JOB_TEMPLATE}"
+        exit 1
+    fi
+    
+    # Substitute environment variables in the template and apply it
+    envsubst < "$JOB_TEMPLATE" | oc apply -f -
+    check_error "Applying Job manifest"
+    
+    echo "--> Scanner Job '${JOB_NAME}' deployed."
+    echo "--> To monitor, run: oc logs -f job/${JOB_NAME} -n ${NAMESPACE}"
+    echo "--> To retrieve artifacts, wait for completion and then use 'oc cp'."
+}
 
-echo "--> Scan complete! Results available in $JUNIT_OUTPUT_DIR"
-echo "   JUnit Report: $JUNIT_OUTPUT_PATH"
-echo "   CSV Error Report: $JUNIT_OUTPUT_DIR/security-scan-$SCAN_DATE"_errors.csv" (if errors occurred)"
-echo "   Debug Log: $JUNIT_OUTPUT_DIR/logs.log"
-echo ""
+cleanup() {
+    print_header "Step 4: Cleaning Up Resources"
+    check_command "oc"
+
+    if [ -z "$NAMESPACE" ]; then
+        echo "Warning: Could not determine OpenShift project for cleanup. Assuming 'default' or last-used."
+    fi
+
+    echo "--> Deleting Job '${JOB_NAME}' in namespace '${NAMESPACE}'..."
+    oc delete job "$JOB_NAME" -n "$NAMESPACE" --ignore-not-found=true
+
+    echo "--> Removing RBAC permissions..."
+    oc adm policy remove-cluster-role-from-user cluster-reader -z default -n "$NAMESPACE" --ignore-not-found=true
+    oc adm policy remove-scc-from-user privileged -z default -n "$NAMESPACE" --ignore-not-found=true
+
+    echo "--> Cleanup complete."
+}
+
+# --- Main Script Logic ---
+
+# Check for required commands at the start
+check_command "go"
+check_command "oc"
+
+ACTION=${1:-"default"}
+
+case "$ACTION" in
+    build)
+        build_image
+        ;;
+    push)
+        push_image
+        ;;
+    deploy)
+        deploy_scanner_job
+        ;;
+    cleanup)
+        cleanup
+        ;;
+    full-deploy)
+        build_image
+        push_image
+        deploy_scanner_job
+        ;;
+    default)
+        build_image
+        push_image
+        deploy_scanner_job
+        echo ""
+        echo "--> Full deployment initiated. Manual cleanup will be required."
+        echo "--> Run './deploy.sh cleanup' when scan is complete."
+        ;;
+    *)
+        echo "Error: Unknown action '$ACTION'."
+        echo "Usage: $0 [build|push|deploy|cleanup|full-deploy]"
+        exit 1
+        ;;
+esac
 
