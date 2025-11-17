@@ -86,7 +86,6 @@ push_image() {
 deploy_scanner_job() {
     print_header "Step 3: Deploying Scanner Job"
     check_command "oc"
-    check_command "envsubst"
 
     if [ -z "$NAMESPACE" ]; then
         echo "Error: Could not determine OpenShift project. Please set NAMESPACE or run 'oc project <name>'."
