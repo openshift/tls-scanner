@@ -11,7 +11,7 @@ spec:
       - name: tls-scanner
         image: ${SCANNER_IMAGE}
         imagePullPolicy: Always
-        command: ["/tls-scanner"]
+        command: ["/usr/local/bin/tls-scanner"]
         args: [
           "--all-pods",
           "--json-file", "/artifacts/results.json",
