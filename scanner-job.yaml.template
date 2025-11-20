@@ -11,13 +11,15 @@ spec:
       - name: tls-scanner
         image: ${SCANNER_IMAGE}
         imagePullPolicy: IfNotPresent
-        command: ["/usr/local/bin/tls-scanner"]
-        args: [
-          "--all-pods",
-          "--json-file", "/artifacts/results.json",
-          "--csv-file", "/artifacts/results.csv",
-          "--log-file", "/artifacts/scan.log"
-        ]
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            /usr/local/bin/tls-scanner --all-pods --json-file /artifacts/results.json --csv-file /artifacts/results.csv --log-file /artifacts/scan.log
+            exit_code=$?
+            echo "Scanner finished with exit code: $exit_code"
+            echo "Sleeping for 5 minutes to allow log collection..."
+            sleep 300
+            exit $exit_code
         resources:
           requests:
             cpu: 100m
