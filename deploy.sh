@@ -112,20 +112,11 @@ deploy_scanner_job() {
     sed -e "s|\${SCANNER_IMAGE}|${SCANNER_IMAGE}|g" -e "s|\${NAMESPACE}|${NAMESPACE}|g" -e "s|\${JOB_NAME}|${JOB_NAME}|g" "$JOB_TEMPLATE" | oc apply -f -
     check_error "Applying Job manifest"
 
-    echo "--> Adding a pause to gather debug info..."
-    sleep 5
-    echo "--> DEBUG: Listing jobs in ${NAMESPACE}"
-    oc get jobs -n "${NAMESPACE}" -o wide
-    echo "--> DEBUG: Listing pods in ${NAMESPACE}"
-    oc get pods -n "${NAMESPACE}" -o wide
-    echo "--> DEBUG: Describing job ${JOB_NAME} in ${NAMESPACE}"
-    oc describe job "${JOB_NAME}" -n "${NAMESPACE}" || echo "--> DEBUG: Job ${JOB_NAME} not found after creation."
-    echo "--> DEBUG: Getting events in ${NAMESPACE} (sorted by time)"
-    oc get events -n "${NAMESPACE}" --sort-by='{.lastTimestamp}'
-
     echo "--> Scanner Job '${JOB_NAME}' deployed."
     echo "--> To monitor, run: oc logs -f job/tls-scanner-job -n ${NAMESPACE}"
-    echo "--> To retrieve artifacts, wait for completion and then use 'oc cp'."
+    echo "--> Waiting for job to complete... (this may take a long time)"
+
+    # Wait for the job to complete
 }
 
 cleanup() {

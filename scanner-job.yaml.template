@@ -10,7 +10,7 @@ spec:
       containers:
       - name: tls-scanner
         image: ${SCANNER_IMAGE}
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         command: ["/usr/local/bin/tls-scanner"]
         args: [
           "--all-pods",
@@ -18,6 +18,12 @@ spec:
           "--csv-file", "/artifacts/results.csv",
           "--log-file", "/artifacts/scan.log"
         ]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+          limits:
+            memory: 1Gi
         volumeMounts:
         - name: artifacts
           mountPath: /artifacts
@@ -25,5 +31,4 @@ spec:
       volumes:
       - name: artifacts
         emptyDir: {}
-  backoffLimit: 1
-  ttlSecondsAfterFinished: 600 # Automatically clean up the job after 10 minutes
+  backoffLimit: 2
