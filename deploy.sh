@@ -102,6 +102,43 @@ deploy_scanner_job() {
     oc adm policy add-scc-to-user privileged -z default -n "$NAMESPACE"
     check_error "Adding privileged SCC"
 
+    echo "--> Creating additional RBAC permissions for cross-namespace resource access..."
+cat <<EOF | oc apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tls-scanner-cross-namespace
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods/exec
+  verbs:
+  - create
+- apiGroups:
+  - operator.openshift.io
+  resources:
+  - ingresscontrollers
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - machineconfiguration.openshift.io
+  resources:
+  - kubeletconfigs
+  verbs:
+  - get
+  - list
+EOF
+    check_error "Creating tls-scanner-cross-namespace ClusterRole"
+
+    oc adm policy add-cluster-role-to-user tls-scanner-cross-namespace -z default -n "$NAMESPACE"
+    check_error "Binding tls-scanner-cross-namespace ClusterRole"
+
+    echo "--> Copying global pull secret to allow image pulls from CI registry..."
+    oc get secret pull-secret -n openshift-config -o yaml | sed "s/namespace: .*/namespace: $NAMESPACE/" | oc apply -n "$NAMESPACE" -f -
+    check_error "Copying pull secret"
+
     echo "--> Applying Job manifest from template: ${JOB_TEMPLATE}"
     if [ ! -f "$JOB_TEMPLATE" ]; then
         echo "Error: Job template file not found: ${JOB_TEMPLATE}"
@@ -129,10 +166,17 @@ cleanup() {
 
     echo "--> Deleting Job '${JOB_NAME}' in namespace '${NAMESPACE}'..."
     oc delete job "$JOB_NAME" -n "$NAMESPACE" --ignore-not-found=true
+    check_error "Deleting Job"
 
     echo "--> Removing RBAC permissions..."
     oc adm policy remove-cluster-role-from-user cluster-reader -z default -n "$NAMESPACE" || true
     oc adm policy remove-scc-from-user privileged -z default -n "$NAMESPACE" || true
+    oc adm policy remove-cluster-role-from-user tls-scanner-cross-namespace -z default -n "$NAMESPACE" || true
+    oc delete clusterrole tls-scanner-cross-namespace --ignore-not-found=true || true
+    check_error "Removing RBAC permissions"
+
+    echo "--> Deleting pull secret link..."
+    oc secrets unlink default pull-secret -n "$NAMESPACE" || true
 
     echo "--> Cleanup complete."
 }
