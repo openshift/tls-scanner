@@ -14,11 +14,20 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
           - |
+            # Run the scanner and capture its exit code
             /usr/local/bin/tls-scanner --all-pods --json-file /artifacts/results.json --csv-file /artifacts/results.csv --log-file /artifacts/scan.log
             exit_code=$?
+
+            # Dump the log file to stdout for CI visibility, which is critical for debugging
+            echo "--- Start of scan.log ---"
+            cat /artifacts/scan.log
+            echo "--- End of scan.log ---"
+
             echo "Scanner finished with exit code: $exit_code"
-            echo "Sleeping for 5 minutes to allow log collection..."
-            sleep 300
+            
+            # Keep the container alive briefly to ensure logs are scraped
+            echo "Pausing for log collection..."
+            sleep 120
             exit $exit_code
         resources:
           requests:
