@@ -18,15 +18,23 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
 )
 
 func newK8sClient() (*K8sClient, error) {
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	config, err := clientcmd.BuildConfigFromFlags("", loadingRules.GetDefaultFilename())
+	// Try to use in-cluster config first, which is the default for in-pod execution
+	config, err := rest.InClusterConfig()
 	if err != nil {
-		return nil, fmt.Errorf("could not get kubernetes config: %v", err)
+		// If that fails, fall back to loading from a kubeconfig file.
+		// This allows the tool to be run from a developer's machine.
+		log.Printf("Could not load in-cluster config, falling back to kubeconfig: %v", err)
+		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+		config, err = clientcmd.BuildConfigFromFlags("", loadingRules.GetDefaultFilename())
+		if err != nil {
+			return nil, fmt.Errorf("could not get kubernetes config: %v", err)
+		}
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
