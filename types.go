@@ -154,6 +154,10 @@ type PortResult struct {
 	IngressTLSConfigCompliance   *TLSConfigComplianceResult `json:"ingress_tls_config_compliance,omitempty"`
 	APIServerTLSConfigCompliance *TLSConfigComplianceResult `json:"api_server_tls_config_compliance,omitempty"`
 	KubeletTLSConfigCompliance   *TLSConfigComplianceResult `json:"kubelet_tls_config_compliance,omitempty"`
+	TLS13Supported               bool                       `json:"tls13_supported,omitempty"`
+	MLKEMSupported               bool                       `json:"mlkem_supported,omitempty"`
+	MLKEMCiphers                 []string                   `json:"mlkem_kems,omitempty"`
+	AllKEMs                      []string                   `json:"all_kems,omitempty"`
 }
 
 type TLSConfigComplianceResult struct {

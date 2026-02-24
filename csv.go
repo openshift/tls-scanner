@@ -12,6 +12,7 @@ import (
 var csvColumns = []string{
 	"IP", "Port", "Protocol", "Service", "Pod Name", "Namespace", "Component Name", "Component Maintainer",
 	"Process", "TLS Ciphers", "TLS Version", "Status", "Reason", "Listen Address",
+	"TLS 1.3 Supported", "ML-KEM Supported", "ML-KEM KEMs", "All KEMs",
 	"Ingress Configured Profile", "Ingress Configured MinVersion", "Ingress MinVersion Compliance", "Ingress Configured Ciphers", "Ingress Cipher Compliance",
 	"API Configured Profile", "API Configured MinVersion", "API MinVersion Compliance", "API Configured Ciphers", "API Cipher Compliance",
 	"Kubelet Configured MinVersion", "Kubelet MinVersion Compliance", "Kubelet Configured Ciphers", "Kubelet Cipher Compliance",
@@ -125,6 +126,10 @@ func writeCSVOutput(results ScanResults, filename string) error {
 				"Status":                        statusStr,
 				"Reason":                        stringOrNA(portResult.Reason),
 				"Listen Address":                stringOrNA(portResult.ListenAddress),
+				"TLS 1.3 Supported":             boolToYesNo(portResult.TLS13Supported),
+				"ML-KEM Supported":              boolToYesNo(portResult.MLKEMSupported),
+				"ML-KEM KEMs":                   joinOrNA(portResult.MLKEMCiphers),
+				"All KEMs":                      joinOrNA(portResult.AllKEMs),
 				"Ingress Configured Profile":    ingressProfile,
 				"Ingress Configured MinVersion": ingressMinVersion,
 				"Ingress MinVersion Compliance": "N/A",
@@ -230,6 +235,13 @@ func stringOrNA(s string) string {
 		return "N/A"
 	}
 	return s
+}
+
+func boolToYesNo(b bool) string {
+	if b {
+		return "Yes"
+	}
+	return "No"
 }
 
 func joinOrNA(slice []string) string {
