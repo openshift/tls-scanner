@@ -71,226 +71,161 @@ func main() {
 		log.Fatal("Error: Number of concurrent scans must be at least 1")
 	}
 
+	isPQCCheck = *pqcCheck
+	if isPQCCheck && !isTestSSLInstalled() {
+		log.Fatal("Error: testssl.sh is not installed or not in PATH. Install from: https://github.com/drwetter/testssl.sh")
+	}
+
 	var k8sClient *K8sClient
-	var err error
 	var allPodsInfo []PodInfo
 
-	if *pqcCheck {
-		isPQCCheck = true
-		if !isTestSSLInstalled() {
-			log.Fatal("Error: testssl.sh is not installed or not in PATH. Install from: https://github.com/drwetter/testssl.sh")
-		}
-
-		var scanResults ScanResults
-
-		if *allPods {
-			k8sClient, err = newK8sClient()
-			if err != nil {
-				log.Fatalf("Could not create kubernetes client for --all-pods: %v", err)
-			}
-			allPodsInfo = k8sClient.getAllPodsInfo()
-
-			// Apply filters
-			if *namespaceFilter != "" {
-				filterNamespaces := strings.Split(*namespaceFilter, ",")
-				filterSet := make(map[string]struct{})
-				for _, ns := range filterNamespaces {
-					filterSet[strings.TrimSpace(ns)] = struct{}{}
-				}
-				var filteredPods []PodInfo
-				for _, pod := range allPodsInfo {
-					if _, ok := filterSet[pod.Namespace]; ok {
-						filteredPods = append(filteredPods, pod)
-					}
-				}
-				allPodsInfo = filteredPods
-			}
-
-			if *limitIPs > 0 {
-				allPodsInfo = limitPodsToIPCount(allPodsInfo, *limitIPs)
-			}
-
-			scanResults = performPQCClusterScan(allPodsInfo, *concurrentScans, k8sClient)
-		} else if *targets != "" {
-			scanResults = performPQCScan(strings.Split(*targets, ","), *concurrentScans)
-		} else {
-			// Single host mode
-			scanResults = performPQCScan([]string{fmt.Sprintf("%s:%s", *host, *port)}, *concurrentScans)
-		}
-
-		finalScanResults = &scanResults
-
-		if *csvFile != "" || *jsonFile != "" || *junitFile != "" {
-			if err := os.MkdirAll(*artifactDir, 0755); err != nil {
-				log.Fatalf("Could not create artifact directory %s: %v", *artifactDir, err)
-			}
-		}
-
-		if *jsonFile != "" {
-			jsonPath := *jsonFile
-			if !filepath.IsAbs(jsonPath) {
-				jsonPath = filepath.Join(*artifactDir, *jsonFile)
-			}
-			if err := writeJSONOutput(scanResults, jsonPath); err != nil {
-				log.Printf("Error writing JSON output: %v", err)
-			} else {
-				log.Printf("JSON results written to: %s", jsonPath)
-			}
-		}
-
-		if *csvFile != "" {
-			csvPath := *csvFile
-			if !filepath.IsAbs(csvPath) {
-				csvPath = filepath.Join(*artifactDir, *csvFile)
-			}
-			if err := writeCSVOutput(scanResults, csvPath); err != nil {
-				log.Printf("Error writing CSV output: %v", err)
-			} else {
-				log.Printf("CSV results written to: %s", csvPath)
-			}
-		}
-
-		if *junitFile != "" {
-			junitPath := *junitFile
-			if !filepath.IsAbs(junitPath) {
-				junitPath = filepath.Join(*artifactDir, *junitFile)
-			}
-			if err := writeJUnitOutput(scanResults, junitPath); err != nil {
-				log.Printf("Error writing JUnit XML output: %v", err)
-			} else {
-				log.Printf("JUnit XML results written to: %s", junitPath)
-			}
-		}
-
-		// Print to console if no output files specified
-		if *jsonFile == "" && *csvFile == "" && *junitFile == "" {
-			printPQCClusterResults(scanResults)
-		}
-
-		return
-	}
-
-	if *targets != "" {
-		targetList := strings.Split(*targets, ",")
-		if len(targetList) == 0 || (len(targetList) == 1 && targetList[0] == "") {
-			log.Fatal("Error: --targets flag provided but no targets were specified")
-		}
-
-		targetsByHost := make(map[string][]string)
-		for _, t := range targetList {
-			parts := strings.Split(t, ":")
-			if len(parts) != 2 {
-				log.Printf("Warning: Skipping invalid target format: %s (expected host:port)", t)
-				continue
-			}
-			host := parts[0]
-			port := parts[1]
-			targetsByHost[host] = append(targetsByHost[host], port)
-		}
-
-		if len(targetsByHost) == 0 {
-			log.Fatal("Error: No valid targets found in --targets flag")
-		}
-
-		scanResults := performTargetsScan(targetsByHost, *concurrentScans)
-		finalScanResults = &scanResults
-
-		writeOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile)
-		if *jsonFile == "" && *csvFile == "" && *junitFile == "" {
-			printClusterResults(scanResults)
-		}
-
-		return
-	}
-
 	if *allPods {
+		var err error
 		k8sClient, err = newK8sClient()
 		if err != nil {
 			log.Fatalf("Could not create kubernetes client for --all-pods: %v", err)
 		}
+		allPodsInfo = getFilteredPods(k8sClient, *componentFilter, *namespaceFilter, *limitIPs)
+	}
 
-		allPodsInfo = k8sClient.getAllPodsInfo() // get pod ip to pod name mapping
+	var scanResults ScanResults
 
-		if *componentFilter != "" {
-			log.Printf("Filtering pods by component name(s): %s", *componentFilter)
-			filterComponents := strings.Split(*componentFilter, ",")
-			filterSet := make(map[string]struct{})
-			for _, c := range filterComponents {
-				filterSet[strings.TrimSpace(c)] = struct{}{}
-			}
-
-			var filteredPods []PodInfo
-			for _, pod := range allPodsInfo {
-				component, err := k8sClient.getOpenshiftComponentFromImage(pod.Image)
-				if err != nil {
-					log.Printf("Warning: could not get component for image %s: %v", pod.Image, err)
-					continue
-				}
-
-				if _, ok := filterSet[component.Component]; ok {
-					filteredPods = append(filteredPods, pod)
-				}
-			}
-			log.Printf("Filtered pods: %d remaining out of %d", len(filteredPods), len(allPodsInfo))
-			allPodsInfo = filteredPods
+	switch {
+	case len(allPodsInfo) > 0:
+		if isPQCCheck {
+			scanResults = performPQCClusterScan(allPodsInfo, *concurrentScans, k8sClient)
+		} else {
+			scanResults = performClusterScan(allPodsInfo, *concurrentScans, k8sClient)
 		}
 
-		if *namespaceFilter != "" {
-			log.Printf("Filtering pods by namespace(s): %s", *namespaceFilter)
-			filterNamespaces := strings.Split(*namespaceFilter, ",")
-			filterSet := make(map[string]struct{})
-			for _, ns := range filterNamespaces {
-				filterSet[strings.TrimSpace(ns)] = struct{}{}
-			}
-
-			var filteredPods []PodInfo
-			for _, pod := range allPodsInfo {
-				if _, ok := filterSet[pod.Namespace]; ok {
-					filteredPods = append(filteredPods, pod)
-				}
-			}
-			log.Printf("Filtered pods by namespace: %d remaining out of %d", len(filteredPods), len(allPodsInfo))
-			allPodsInfo = filteredPods
+	case *targets != "":
+		if isPQCCheck {
+			scanResults = performPQCScan(strings.Split(*targets, ","), *concurrentScans)
+		} else {
+			targetsByHost := parseTargetsByHost(strings.Split(*targets, ","))
+			scanResults = performTargetsScan(targetsByHost, *concurrentScans)
 		}
 
-		log.Printf("Found %d pods to scan from the cluster.", len(allPodsInfo))
-
-		// Apply IP limit if specified
-		if *limitIPs > 0 {
-			totalIPs := 0
-			for _, pod := range allPodsInfo {
-				totalIPs += len(pod.IPs)
-			}
-
-			if totalIPs > *limitIPs {
-				log.Printf("Limiting scan to %d IPs (found %d total IPs)", *limitIPs, totalIPs)
-				allPodsInfo = limitPodsToIPCount(allPodsInfo, *limitIPs)
-				limitedTotal := 0
-				for _, pod := range allPodsInfo {
-					limitedTotal += len(pod.IPs)
-				}
-				log.Printf("After limiting: %d pods with %d total IPs", len(allPodsInfo), limitedTotal)
-			}
+	default:
+		if isPQCCheck {
+			scanResults = performPQCScan([]string{fmt.Sprintf("%s:%s", *host, *port)}, *concurrentScans)
+		} else {
+			scanResults = performSingleHostScan(*host, *port, k8sClient)
 		}
 	}
 
-	if len(allPodsInfo) > 0 {
-		scanResults := performClusterScan(allPodsInfo, *concurrentScans, k8sClient)
-		finalScanResults = &scanResults
+	finalScanResults = &scanResults
 
-		writeOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile)
-		if *jsonFile == "" && *csvFile == "" && *junitFile == "" {
+	writeOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile)
+	if *jsonFile == "" && *csvFile == "" && *junitFile == "" {
+		if isPQCCheck {
+			printPQCClusterResults(scanResults)
+		} else if len(allPodsInfo) > 0 || *targets != "" {
 			printClusterResults(scanResults)
+		} else {
+			printParsedResults(scanResults)
+		}
+	}
+}
+
+// getFilteredPods fetches all pods from the cluster and applies component,
+// namespace, and IP-limit filters. Shared by both PQC and default scan modes.
+func getFilteredPods(k8sClient *K8sClient, componentFilter, namespaceFilter string, limitIPs int) []PodInfo {
+	allPodsInfo := k8sClient.getAllPodsInfo()
+
+	if componentFilter != "" {
+		log.Printf("Filtering pods by component name(s): %s", componentFilter)
+		filterComponents := strings.Split(componentFilter, ",")
+		filterSet := make(map[string]struct{})
+		for _, c := range filterComponents {
+			filterSet[strings.TrimSpace(c)] = struct{}{}
 		}
 
-		return
+		var filteredPods []PodInfo
+		for _, pod := range allPodsInfo {
+			component, err := k8sClient.getOpenshiftComponentFromImage(pod.Image)
+			if err != nil {
+				log.Printf("Warning: could not get component for image %s: %v", pod.Image, err)
+				continue
+			}
+			if _, ok := filterSet[component.Component]; ok {
+				filteredPods = append(filteredPods, pod)
+			}
+		}
+		log.Printf("Filtered pods: %d remaining out of %d", len(filteredPods), len(allPodsInfo))
+		allPodsInfo = filteredPods
 	}
 
-	log.Printf("Found Nmap. Starting scan on %s:%s...\n\n", *host, *port)
+	if namespaceFilter != "" {
+		log.Printf("Filtering pods by namespace(s): %s", namespaceFilter)
+		filterNamespaces := strings.Split(namespaceFilter, ",")
+		filterSet := make(map[string]struct{})
+		for _, ns := range filterNamespaces {
+			filterSet[strings.TrimSpace(ns)] = struct{}{}
+		}
 
-	cmd := exec.Command("nmap", "-Pn", "-sV", "--script", "ssl-enum-ciphers", "-p", *port, "-oX", "-", *host)
+		var filteredPods []PodInfo
+		for _, pod := range allPodsInfo {
+			if _, ok := filterSet[pod.Namespace]; ok {
+				filteredPods = append(filteredPods, pod)
+			}
+		}
+		log.Printf("Filtered pods by namespace: %d remaining out of %d", len(filteredPods), len(allPodsInfo))
+		allPodsInfo = filteredPods
+	}
 
-	output, err := cmd.CombinedOutput() // CombinedOutput captures both stdout and stderr.
+	log.Printf("Found %d pods to scan from the cluster.", len(allPodsInfo))
+
+	if limitIPs > 0 {
+		totalIPs := 0
+		for _, pod := range allPodsInfo {
+			totalIPs += len(pod.IPs)
+		}
+		if totalIPs > limitIPs {
+			log.Printf("Limiting scan to %d IPs (found %d total IPs)", limitIPs, totalIPs)
+			allPodsInfo = limitPodsToIPCount(allPodsInfo, limitIPs)
+			limitedTotal := 0
+			for _, pod := range allPodsInfo {
+				limitedTotal += len(pod.IPs)
+			}
+			log.Printf("After limiting: %d pods with %d total IPs", len(allPodsInfo), limitedTotal)
+		}
+	}
+
+	return allPodsInfo
+}
+
+// parseTargetsByHost parses a list of "host:port" strings into a map of host -> ports.
+func parseTargetsByHost(targetList []string) map[string][]string {
+	if len(targetList) == 0 || (len(targetList) == 1 && targetList[0] == "") {
+		log.Fatal("Error: --targets flag provided but no targets were specified")
+	}
+
+	targetsByHost := make(map[string][]string)
+	for _, t := range targetList {
+		parts := strings.Split(t, ":")
+		if len(parts) != 2 {
+			log.Printf("Warning: Skipping invalid target format: %s (expected host:port)", t)
+			continue
+		}
+		host := parts[0]
+		port := parts[1]
+		targetsByHost[host] = append(targetsByHost[host], port)
+	}
+
+	if len(targetsByHost) == 0 {
+		log.Fatal("Error: No valid targets found in --targets flag")
+	}
+
+	return targetsByHost
+}
+
+// performSingleHostScan runs an nmap TLS scan against a single host:port.
+func performSingleHostScan(host, port string, k8sClient *K8sClient) ScanResults {
+	log.Printf("Found Nmap. Starting scan on %s:%s...\n\n", host, port)
+
+	cmd := exec.Command("nmap", "-Pn", "-sV", "--script", "ssl-enum-ciphers", "-p", port, "-oX", "-", host)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Fatalf("Error executing Nmap command. Nmap output:\n%s", string(output))
 	}
@@ -300,7 +235,6 @@ func main() {
 		log.Fatalf("Error parsing Nmap XML output: %v", err)
 	}
 
-	// For single host scans, always create ScanResults for compliance checking
 	var tlsConfig *TLSSecurityProfile
 	if k8sClient != nil {
 		if config, err := k8sClient.getTLSSecurityProfile(); err != nil {
@@ -310,34 +244,31 @@ func main() {
 		}
 	}
 
-	// Convert single scan to ScanResults format
 	singleResult := ScanResults{
 		Timestamp:         time.Now().Format(time.RFC3339),
 		TotalIPs:          1,
 		ScannedIPs:        1,
 		TLSSecurityConfig: tlsConfig,
 		IPResults: []IPResult{{
-			IP:          *host,
+			IP:          host,
 			Status:      "scanned",
 			OpenPorts:   []int{},
 			PortResults: []PortResult{},
 		}},
 	}
 
-	// Extract port information from scan result
 	if len(scanResult.Hosts) > 0 && len(scanResult.Hosts[0].Ports) > 0 {
 		for _, tlsPort := range scanResult.Hosts[0].Ports {
-			if port, err := strconv.Atoi(tlsPort.PortID); err == nil {
-				singleResult.IPResults[0].OpenPorts = append(singleResult.IPResults[0].OpenPorts, port)
+			if portNum, err := strconv.Atoi(tlsPort.PortID); err == nil {
+				singleResult.IPResults[0].OpenPorts = append(singleResult.IPResults[0].OpenPorts, portNum)
 				portResult := PortResult{
-					Port:     port,
+					Port:     portNum,
 					Protocol: tlsPort.Protocol,
 					State:    tlsPort.State.State,
 					Service:  tlsPort.Service.Name,
 				}
 				portResult.TlsVersions, portResult.TlsCiphers, portResult.TlsCipherStrength = extractTLSInfo(scanResult)
 
-				// Check compliance if TLS config is available
 				if tlsConfig != nil && len(portResult.TlsCiphers) > 0 {
 					checkCompliance(&portResult, tlsConfig)
 				}
@@ -347,12 +278,7 @@ func main() {
 		}
 	}
 
-	writeOutputFiles(singleResult, *artifactDir, *jsonFile, *csvFile, *junitFile)
-	if *jsonFile == "" && *csvFile == "" && *junitFile == "" {
-		printParsedResults(singleResult)
-	}
-
-	finalScanResults = &singleResult
+	return singleResult
 }
 
 func writeJUnitOutput(scanResults ScanResults, filename string) error {

@@ -17,7 +17,7 @@ import (
 // XML output. Other scanning implementations do not need to use this if they
 // can map the appropriate information into IPResult and PortResult directly.
 type ScanRun struct {
-	XMLName xml.Name `xml:"scanrun" json:"-"`
+	XMLName xml.Name `xml:"nmaprun" json:"-"`
 	Hosts   []Host   `xml:"host" json:"hosts"`
 }
 
