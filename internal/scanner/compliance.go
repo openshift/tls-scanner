@@ -1,6 +1,8 @@
 package scanner
 
 import (
+	"log"
+
 	"github.com/openshift/tls-scanner/internal/k8s"
 )
 
@@ -19,10 +21,10 @@ func getMinVersionValue(versions []string) int {
 }
 
 type profileInput struct {
-	profileType    string
-	minTLSVersion  string
+	profileType     string
+	minTLSVersion   string
 	expectedCiphers []string
-	result         *TLSConfigComplianceResult
+	result          *TLSConfigComplianceResult
 }
 
 func evaluateCompliance(scannedMinVer int, scannedCiphers []string, input profileInput) {
@@ -77,8 +79,14 @@ func checkCipherCompliance(gotCiphers []string, expectedCiphers []string) bool {
 	}
 
 	for _, cipher := range gotCiphers {
-		convertedCipher := IanaCipherToOpenSSLCipherMap[cipher]
-		if _, exists := expectedSet[convertedCipher]; !exists {
+		converted, ok := IanaCipherToOpenSSLCipherMap[cipher]
+		if !ok {
+			// If the cipher is not in the map, try to use the original cipher,
+			// testssl.sh may report them in IANA format (e.g. in cipher-tls1_* ciphers)
+			converted = cipher
+		}
+		if _, exists := expectedSet[converted]; !exists {
+			log.Printf("Warning: cipher %q (resolved as %q) not found in expected cipher set. cipher compliance will fail.", cipher, converted)
 			return false
 		}
 	}
