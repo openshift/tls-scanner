@@ -336,6 +336,35 @@ func GroupTestSSLOutputByIPPort(jsonData []byte) (map[string][]map[string]interf
 	return grouped, nil
 }
 
+// ExtractCiphersFromTestSSL extracts all cipher suites from testssl.sh
+// cipher-tls1_2_* and cipher-tls1_3_* findings. Unlike FS_ECDHE (which only
+// reports forward-secrecy ciphers), this captures every cipher the server
+// offers, including static RSA key-exchange suites.
+func ExtractCiphersFromTestSSL(jsonData []byte) []string {
+	var rawData []map[string]interface{}
+	if err := json.Unmarshal(jsonData, &rawData); err != nil {
+		log.Printf("Error parsing testssl.sh JSON for ciphers: %v", err)
+		return nil
+	}
+
+	var ciphers []string
+	for _, finding := range rawData {
+		id, _ := finding["id"].(string)
+		if !strings.HasPrefix(id, "cipher-tls1_") {
+			continue
+		}
+		cipher, _ := finding["finding"].(string)
+		if cipher == "" {
+			continue
+		}
+		if !stringInSlice(cipher, ciphers) {
+			ciphers = append(ciphers, cipher)
+		}
+	}
+
+	return ciphers
+}
+
 func ExtractTLSInfo(scanRun ScanRun) []string {
 	var tlsVersions []string
 
