@@ -356,8 +356,11 @@ func batchScan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfi
 			Service:  "ssl/tls",
 		}
 
-		portResult.TlsVersions, portResult.TlsCiphers, portResult.TlsCipherStrength = ExtractTLSInfo(scanResult)
+		portResult.TlsVersions = ExtractTLSInfo(scanResult)
 		portResult.TlsKeyExchange = ExtractKeyExchangeFromTestSSL(portData)
+		if portResult.TlsKeyExchange != nil && portResult.TlsKeyExchange.ForwardSecrecy != nil {
+			portResult.TlsCiphers = portResult.TlsKeyExchange.ForwardSecrecy.ECDHE
+		}
 
 		PopulatePQCFields(&portResult)
 

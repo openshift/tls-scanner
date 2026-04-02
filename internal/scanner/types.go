@@ -111,7 +111,6 @@ type PortResult struct {
 	ContainerName                string                     `json:"container_name,omitempty"`
 	TlsVersions                  []string                   `json:"tls_versions,omitempty"`
 	TlsCiphers                   []string                   `json:"tls_ciphers,omitempty"`
-	TlsCipherStrength            map[string]string          `json:"tls_cipher_strength,omitempty"`
 	TlsKeyExchange               *KeyExchangeInfo           `json:"tls_key_exchange,omitempty"`
 	Error                        string                     `json:"error,omitempty"`
 	Status                       ScanStatus                 `json:"status"`

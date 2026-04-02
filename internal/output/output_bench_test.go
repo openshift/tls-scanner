@@ -35,14 +35,6 @@ func buildLargeResults(n int) scanner.ScanResults {
 				"TLS_AES_256_GCM_SHA384",
 				"TLS_CHACHA20_POLY1305_SHA256",
 			},
-			TlsCipherStrength: map[string]string{
-				"ECDHE-RSA-AES128-GCM-SHA256":  "A",
-				"ECDHE-RSA-AES256-GCM-SHA384":  "A",
-				"ECDHE-ECDSA-AES128-GCM-SHA256": "A",
-				"TLS_AES_128_GCM_SHA256":        "A",
-				"TLS_AES_256_GCM_SHA384":        "A",
-				"TLS_CHACHA20_POLY1305_SHA256":   "A",
-			},
 			TlsKeyExchange: &scanner.KeyExchangeInfo{
 				Groups: []string{"x25519", "secp256r1", "secp384r1"},
 				ForwardSecrecy: &scanner.ForwardSecrecy{

@@ -69,12 +69,7 @@ func PrintClusterResults(results scanner.ScanResults) {
 			if len(portResult.TlsCiphers) > 0 {
 				fmt.Printf("    Ciphers:\n")
 				for _, cipher := range portResult.TlsCiphers {
-					strength := portResult.TlsCipherStrength[cipher]
-					if strength != "" {
-						fmt.Printf("      %s - %s\n", cipher, strength)
-					} else {
-						fmt.Printf("      %s\n", cipher)
-					}
+					fmt.Printf("      %s\n", cipher)
 				}
 			}
 			fmt.Printf("\n")
@@ -98,17 +93,12 @@ func PrintParsedResults(results scanner.ScanResults) {
 				for _, version := range portResult.TlsVersions {
 					fmt.Printf("|   %s:\n", version)
 				}
-				if len(portResult.TlsCiphers) > 0 {
-					fmt.Printf("|   ciphers:\n")
-					for _, cipher := range portResult.TlsCiphers {
-						strength := portResult.TlsCipherStrength[cipher]
-						if strength != "" {
-							fmt.Printf("|     %s - %s\n", cipher, strength)
-						} else {
-							fmt.Printf("|     %s\n", cipher)
-						}
-					}
+			if len(portResult.TlsCiphers) > 0 {
+				fmt.Printf("|   ciphers:\n")
+				for _, cipher := range portResult.TlsCiphers {
+					fmt.Printf("|     %s\n", cipher)
 				}
+			}
 			}
 		}
 	}

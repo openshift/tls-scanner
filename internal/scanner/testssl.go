@@ -336,10 +336,8 @@ func GroupTestSSLOutputByIPPort(jsonData []byte) (map[string][]map[string]interf
 	return grouped, nil
 }
 
-func ExtractTLSInfo(scanRun ScanRun) (versions []string, ciphers []string, cipherStrength map[string]string) {
-	var allDetectedCiphers []string
+func ExtractTLSInfo(scanRun ScanRun) []string {
 	var tlsVersions []string
-	cipherStrength = make(map[string]string)
 
 	for _, host := range scanRun.Hosts {
 		for _, tlsPort := range host.Ports {
@@ -350,36 +348,11 @@ func ExtractTLSInfo(scanRun ScanRun) (versions []string, ciphers []string, ciphe
 						if tlsVersion != "" {
 							tlsVersions = append(tlsVersions, tlsVersion)
 						}
-
-						for _, subTable := range table.Tables {
-							if subTable.Key == "ciphers" {
-								var currentCipherName string
-								var currentCipherStrength string
-								for _, cipherTable := range subTable.Tables {
-									currentCipherName = ""
-									currentCipherStrength = ""
-									for _, elem := range cipherTable.Elems {
-										if elem.Key == "name" {
-											currentCipherName = elem.Value
-										} else if elem.Key == "strength" {
-											currentCipherStrength = elem.Value
-										}
-									}
-									if currentCipherName != "" && currentCipherStrength != "" {
-										allDetectedCiphers = append(allDetectedCiphers, currentCipherName)
-										cipherStrength[currentCipherName] = currentCipherStrength
-									}
-								}
-							}
-						}
 					}
 				}
 			}
 		}
 	}
 
-	allDetectedCiphers = removeDuplicates(allDetectedCiphers)
-	tlsVersions = removeDuplicates(tlsVersions)
-
-	return tlsVersions, allDetectedCiphers, cipherStrength
+	return removeDuplicates(tlsVersions)
 }
