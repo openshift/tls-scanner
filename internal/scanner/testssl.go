@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"os/exec"
+	"regexp"
 	"strings"
 )
 
@@ -347,6 +348,8 @@ func ExtractCiphersFromTestSSL(jsonData []byte) []string {
 		return nil
 	}
 
+	r := regexp.MustCompile(`TLS \d.\d\s+[^\s]+\s+([^\s]+)\s+.*`)
+
 	var ciphers []string
 	for _, finding := range rawData {
 		id, _ := finding["id"].(string)
@@ -357,6 +360,20 @@ func ExtractCiphersFromTestSSL(jsonData []byte) []string {
 		if cipher == "" {
 			continue
 		}
+		// Each "finding" value is in the following format:
+		// 	 proto		hexcode		cipher 		keyexchange		encryption 	export
+		// E.g.
+		//   TLS 1.3   x1302   TLS_AES_256_GCM_SHA384            ECDH/MLKEM AESGCM      256      TLS_AES_256_GCM_SHA384
+
+		// Remove the trailing spaces just in case
+		cipher = strings.Trim(cipher, " ")
+		// find the cipher by retrieving the third item
+		matches := r.FindStringSubmatch(cipher)
+		if len(matches) < 2 {
+			log.Printf("Expected a ciper in %q, did not find any", cipher)
+			continue
+		}
+		cipher = matches[1]
 		if !stringInSlice(cipher, ciphers) {
 			ciphers = append(ciphers, cipher)
 		}
