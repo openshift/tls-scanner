@@ -1,4 +1,7 @@
-FROM docker.io/library/golang:1.24 AS builder
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.24 AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -7,7 +10,7 @@ RUN go mod download
 
 COPY . ./
 
-RUN make
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH make
 
 FROM registry.fedoraproject.org/fedora:latest
 

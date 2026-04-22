@@ -1,4 +1,7 @@
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.24-openshift-4.21 AS builder
+FROM --platform=$BUILDPLATFORM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.24-openshift-4.21 AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -7,7 +10,7 @@ RUN go mod download
 
 COPY . ./
 
-RUN make
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH make
 
 FROM registry.ci.openshift.org/ocp/4.21:base-rhel9
 
