@@ -33,7 +33,7 @@ func TestIntegrationSingleTarget(t *testing.T) {
 	jobs := []ScanJob{{IP: tgt.ip, Port: tgt.port}}
 
 	start := time.Now()
-	results := batchScan(jobs, 1, nil, nil, Policy())
+	results := batchScan(jobs, 1, nil, nil, testPolicy(t))
 	elapsed := time.Since(start)
 
 	t.Logf("Single target %s (%s:%d): %v", tgt.desc, tgt.ip, tgt.port, elapsed)
@@ -73,7 +73,7 @@ func TestIntegrationBatchTargets(t *testing.T) {
 	}
 
 	start := time.Now()
-	results := batchScan(jobs, 4, nil, nil, Policy())
+	results := batchScan(jobs, 4, nil, nil, testPolicy(t))
 	elapsed := time.Since(start)
 
 	t.Logf("Batch %d targets (MAX_PARALLEL=4): %v (%.1fs/target)",
@@ -102,12 +102,12 @@ func TestIntegrationParallelScaling(t *testing.T) {
 
 	t.Log("--- Sequential run (MAX_PARALLEL=1) ---")
 	start := time.Now()
-	seqResults := batchScan(jobs, 1, nil, nil, Policy())
+	seqResults := batchScan(jobs, 1, nil, nil, testPolicy(t))
 	sequential := time.Since(start)
 
 	t.Log("--- Parallel run (MAX_PARALLEL=", len(jobs), ") ---")
 	start = time.Now()
-	parResults := batchScan(jobs, len(jobs), nil, nil, Policy())
+	parResults := batchScan(jobs, len(jobs), nil, nil, testPolicy(t))
 	parallel := time.Since(start)
 
 	speedup := sequential.Seconds() / parallel.Seconds()

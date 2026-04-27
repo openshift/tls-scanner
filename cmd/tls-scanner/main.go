@@ -91,7 +91,11 @@ func run(args []string) (exitCode int) {
 		return 0
 	}
 
-	policy := scanner.Policy()
+	policy, err := scanner.Policy()
+	if err != nil {
+		log.Printf("Error loading policy: %v", err)
+		return 1
+	}
 
 	defer func() {
 		if *timingFile != "" {
@@ -133,7 +137,6 @@ func run(args []string) (exitCode int) {
 	}
 
 	var client *k8s.Client
-	var err error
 	var pods []k8s.PodInfo
 
 	if *targets != "" {

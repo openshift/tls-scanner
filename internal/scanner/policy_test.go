@@ -103,8 +103,17 @@ func TestPolicyRuleShadowing(t *testing.T) {
 	}
 }
 
+func testPolicy(t *testing.T) *ComponentPolicy {
+	t.Helper()
+	p, err := Policy()
+	if err != nil {
+		t.Fatalf("Policy() error: %v", err)
+	}
+	return p
+}
+
 func TestPolicy(t *testing.T) {
-	p := Policy()
+	p := testPolicy(t)
 	if p == nil {
 		t.Fatal("Policy() returned nil")
 	}
@@ -250,7 +259,7 @@ func TestPolicyResolve(t *testing.T) {
 }
 
 func TestPolicyBehaviour(t *testing.T) {
-	p := Policy()
+	p := testPolicy(t)
 
 	tests := []struct {
 		name      string
