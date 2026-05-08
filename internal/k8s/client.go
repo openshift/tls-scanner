@@ -137,12 +137,16 @@ func (c *Client) FilterPodsByComponent(pods []PodInfo, componentFilter string) [
 
 	var filtered []PodInfo
 	for _, pod := range pods {
-		component, err := c.GetOpenshiftComponentFromImage(pod.Image)
-		if err != nil {
-			slog.Warn("could not get component for image", "image", pod.Image, "error", err)
+		// Extract component from pod labels (or fall back to image parsing)
+		var componentName string
+		if pod.Pod != nil && len(pod.Pod.Spec.Containers) > 0 {
+			componentName = c.extractComponentFromPod(*pod.Pod, pod.Pod.Spec.Containers[0])
+		} else {
+			log.Printf("Warning: pod %s/%s has no pod or container info", pod.Namespace, pod.Name)
 			continue
 		}
-		if _, ok := filterSet[component.Component]; ok {
+
+		if _, ok := filterSet[componentName]; ok {
 			filtered = append(filtered, pod)
 		}
 	}
