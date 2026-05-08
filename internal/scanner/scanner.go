@@ -68,8 +68,8 @@ func DiscoverTargets(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client
 				progress.PodDiscovered()
 
 				var component *k8s.OpenshiftComponent
-				if client != nil {
-					component, _ = client.GetOpenshiftComponentFromImage(pod.Image)
+				if client != nil && pod.Pod != nil {
+					component, _ = client.GetOpenshiftComponentFromPod(*pod.Pod)
 				}
 
 			specPorts, _ := k8s.DiscoverPortsFromPodSpec(pod.Pod)

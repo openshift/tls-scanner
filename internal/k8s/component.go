@@ -23,6 +23,30 @@ func (c *Client) GetOpenshiftComponentFromImage(image string) (*OpenshiftCompone
 	return c.getComponentFromClusterMetadata(image)
 }
 
+// GetOpenshiftComponentFromPod extracts component information from a pod,
+// preferring pod labels for the component name but using image metadata for
+// source location and maintainer information.
+func (c *Client) GetOpenshiftComponentFromPod(pod v1.Pod) (*OpenshiftComponent, error) {
+	// First get the base component info from the image
+	image := ""
+	if len(pod.Spec.Containers) > 0 {
+		image = pod.Spec.Containers[0].Image
+	}
+
+	component, err := c.GetOpenshiftComponentFromImage(image)
+	if err != nil {
+		return nil, err
+	}
+
+	// Override the component name with the value from pod labels
+	if len(pod.Spec.Containers) > 0 {
+		componentName := c.extractComponentFromPod(pod, pod.Spec.Containers[0])
+		component.Component = componentName
+	}
+
+	return component, nil
+}
+
 func (c *Client) parseOpenshiftComponentFromImageRef(image string) *OpenshiftComponent {
 	if strings.Contains(image, "quay.io/openshift-release-dev") {
 		component := &OpenshiftComponent{
