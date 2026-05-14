@@ -142,7 +142,7 @@ func (c *Client) FilterPodsByComponent(pods []PodInfo, componentFilter string) [
 		if pod.Pod != nil && len(pod.Pod.Spec.Containers) > 0 {
 			componentName = c.extractComponentFromPod(*pod.Pod, pod.Pod.Spec.Containers[0])
 		} else {
-			log.Printf("Warning: pod %s/%s has no pod or container info", pod.Namespace, pod.Name)
+			slog.Warn("pod has no pod or container info", "namespace", pod.Namespace, "name", pod.Name)
 			continue
 		}
 
