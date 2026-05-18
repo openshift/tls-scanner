@@ -69,7 +69,11 @@ func DiscoverTargets(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client
 
 				var component *k8s.OpenshiftComponent
 				if client != nil && pod.Pod != nil {
-					component, _ = client.GetOpenshiftComponentFromPod(*pod.Pod)
+					var err error
+					component, err = client.GetOpenshiftComponentFromPod(*pod.Pod)
+					if err != nil {
+						slog.Warn("failed to extract component from pod", "namespace", pod.Namespace, "pod", pod.Name, "error", err)
+					}
 				}
 
 			specPorts, _ := k8s.DiscoverPortsFromPodSpec(pod.Pod)

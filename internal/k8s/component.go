@@ -27,21 +27,28 @@ func (c *Client) GetOpenshiftComponentFromImage(image string) (*OpenshiftCompone
 // preferring pod labels for the component name but using image metadata for
 // source location and maintainer information.
 func (c *Client) GetOpenshiftComponentFromPod(pod v1.Pod) (*OpenshiftComponent, error) {
-	// First get the base component info from the image
-	image := ""
-	if len(pod.Spec.Containers) > 0 {
-		image = pod.Spec.Containers[0].Image
+	if len(pod.Spec.Containers) == 0 {
+		return nil, fmt.Errorf("pod has no containers")
 	}
 
-	component, err := c.GetOpenshiftComponentFromImage(image)
-	if err != nil {
-		return nil, err
+	image := pod.Spec.Containers[0].Image
+	container := pod.Spec.Containers[0]
+
+	// Start with locally available pod data - no API calls needed
+	component := &OpenshiftComponent{
+		Component:           c.extractComponentFromPod(pod, container),
+		MaintainerComponent: c.extractMaintainerFromPod(pod),
+		IsBundle:            false,
 	}
 
-	// Override the component name with the value from pod labels
-	if len(pod.Spec.Containers) > 0 {
-		componentName := c.extractComponentFromPod(pod, pod.Spec.Containers[0])
-		component.Component = componentName
+	// Try to enhance with image metadata (source location)
+	// This attempts fast image reference parsing first, avoiding cluster-wide searches
+	imageComponent := c.parseOpenshiftComponentFromImageRef(image)
+	if imageComponent != nil {
+		component.SourceLocation = imageComponent.SourceLocation
+	} else {
+		// Fall back to simple registry extraction
+		component.SourceLocation = c.extractRegistryFromImage(image)
 	}
 
 	return component, nil
