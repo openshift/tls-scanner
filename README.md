@@ -177,7 +177,7 @@ The scanner binary accepts the following command-line options. These are configu
 - `-port <port>` - Target port to scan (default: 443)
 - `-targets <host:port,...>` - Comma-separated list of host:port targets to scan
 - `-all-pods` - Scan all pods in the cluster (requires cluster access)
-- `-component-filter <names>` - Filter pods by component name (comma-separated, used with -all-pods)
+- `-component-filter <names>` - Filter pods by component name (comma-separated, used with -all-pods)*
 - `-namespace-filter <names>` - Filter pods by namespace (comma-separated, used with -all-pods)
 - `-limit-ips <num>` - Cap number of IPs to scan, for testing (0 = no limit)
 - `-pqc-check` - Check for TLS 1.3 + ML-KEM (post-quantum) support; exits non-zero on failure
@@ -189,3 +189,13 @@ The scanner binary accepts the following command-line options. These are configu
 - `-log-file <file>` - Redirect all log output to the specified file
 - `-timing-file <file>` - Write timing report to specified file in artifact-dir
 - `-version` - Print version and exit
+
+
+**Note**
+
+`-component-filter` identifies component name according to the following order:
+1. pod.labels['app']
+2. pod.labels['component']
+3. pod.labels['app.kubernetes.io/name']
+4. container.Name
+5. name determined from container.Image 
