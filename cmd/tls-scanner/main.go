@@ -75,6 +75,8 @@ func run(args []string) (exitCode int) {
 	scanTimeoutPerTarget := fs.Int("scan-timeout-per-target", scanner.DefaultScanTimeouts.PerTargetSeconds, "Seconds per target for batch scan timeout calculation")
 	connectTimeout := fs.Int("connect-timeout", scanner.DefaultScanTimeouts.ConnectTimeout, "Timeout in seconds for testssl.sh connect and openssl operations")
 	tlsProfileType := fs.String("tls-profile-type", "", "Expected cluster TLS profile type for compliance checks (Old, Intermediate, Modern). When set, skips reading APIServer/cluster from the API.")
+	hypershiftHostedClusterName := fs.String("hypershift-hosted-cluster-name", "", "HyperShift HostedCluster name. When set, TLS config is read from HostedCluster.spec.configuration on the management cluster instead of APIServer/cluster.")
+	hypershiftHostedClusterNamespace := fs.String("hypershift-hosted-cluster-namespace", "clusters", "Namespace of the HyperShift HostedCluster CR.")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -133,8 +135,23 @@ func run(args []string) (exitCode int) {
 		return 1
 	}
 
+	var client *k8s.Client
 	var tlsProfileOverride *k8s.TLSSecurityProfile
-	if *tlsProfileType != "" {
+	if *hypershiftHostedClusterName != "" && *tlsProfileType != "" {
+		slog.Warn("both --hypershift-hosted-cluster-name and --tls-profile-type are set; using HostedCluster TLS config")
+	}
+	if *hypershiftHostedClusterName != "" {
+		client, err = k8s.NewClient()
+		if err != nil {
+			slog.Error("could not create kubernetes client for HyperShift HostedCluster lookup", "error", err)
+			return 1
+		}
+		tlsProfileOverride, err = client.GetTLSSecurityProfileFromHostedCluster(*hypershiftHostedClusterName, *hypershiftHostedClusterNamespace)
+		if err != nil {
+			slog.Error("could not load TLS profile from HostedCluster", "error", err)
+			return 1
+		}
+	} else if *tlsProfileType != "" {
 		tlsProfileOverride, err = k8s.NewTLSSecurityProfileFromType(*tlsProfileType)
 		if err != nil {
 			slog.Error("invalid tls profile type", "error", err)
@@ -166,7 +183,6 @@ func run(args []string) (exitCode int) {
 		return 1
 	}
 
-	var client *k8s.Client
 	var pods []k8s.PodInfo
 
 	if *targets != "" {
@@ -236,10 +252,12 @@ func run(args []string) (exitCode int) {
 	}
 
 	if *allPods {
-		client, err = k8s.NewClient()
-		if err != nil {
-			slog.Error("could not create kubernetes client for --all-pods", "error", err)
-			return 1
+		if client == nil {
+			client, err = k8s.NewClient()
+			if err != nil {
+				slog.Error("could not create kubernetes client for --all-pods", "error", err)
+				return 1
+			}
 		}
 
 		pods, err = client.GetAllPodsInfo()

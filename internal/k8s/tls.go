@@ -29,7 +29,7 @@ func (c *Client) GetTLSSecurityProfile() (*TLSSecurityProfile, error) {
 		slog.Warn("could not get API Server custom resource", "error", err)
 		profile.TLSAdherence = configv1.TLSAdherencePolicyNoOpinion
 	} else {
-		profile.APIServer = extractAPIServerTLS(apiserver)
+		profile.APIServer = extractAPIServerTLSFromSpec(&apiserver.Spec)
 		profile.TLSAdherence = apiserver.Spec.TLSAdherence
 	}
 
@@ -93,29 +93,33 @@ func (c *Client) getIngressControllerTLS(fallback *APIServerTLSProfile) (*Ingres
 }
 
 func extractAPIServerTLS(apiserver *configv1.APIServer) *APIServerTLSProfile {
+	return extractAPIServerTLSFromSpec(&apiserver.Spec)
+}
+
+func extractAPIServerTLSFromSpec(spec *configv1.APIServerSpec) *APIServerTLSProfile {
 	profile := &APIServerTLSProfile{}
 
-	if apiserver.Spec.TLSSecurityProfile == nil {
+	if spec == nil || spec.TLSSecurityProfile == nil {
 		profile.Type = defaultProfileName
 		profile.Ciphers = defaultProfileCiphers
 		profile.MinTLSVersion = defaultProfileMinVer
 		return profile
 	}
 
-	profile.Type = string(apiserver.Spec.TLSSecurityProfile.Type)
-	if custom := apiserver.Spec.TLSSecurityProfile.Custom; custom != nil {
+	profile.Type = string(spec.TLSSecurityProfile.Type)
+	if custom := spec.TLSSecurityProfile.Custom; custom != nil {
 		profile.Ciphers = custom.Ciphers
 		profile.MinTLSVersion = string(custom.MinTLSVersion)
 	}
-	if apiserver.Spec.TLSSecurityProfile.Type == configv1.TLSProfileOldType {
+	if spec.TLSSecurityProfile.Type == configv1.TLSProfileOldType {
 		profile.Ciphers = configv1.TLSProfiles[configv1.TLSProfileOldType].Ciphers
 		profile.MinTLSVersion = string(configv1.TLSProfiles[configv1.TLSProfileOldType].MinTLSVersion)
 	}
-	if apiserver.Spec.TLSSecurityProfile.Type == configv1.TLSProfileIntermediateType {
+	if spec.TLSSecurityProfile.Type == configv1.TLSProfileIntermediateType {
 		profile.Ciphers = configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers
 		profile.MinTLSVersion = string(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion)
 	}
-	if apiserver.Spec.TLSSecurityProfile.Type == configv1.TLSProfileModernType {
+	if spec.TLSSecurityProfile.Type == configv1.TLSProfileModernType {
 		profile.Ciphers = configv1.TLSProfiles[configv1.TLSProfileModernType].Ciphers
 		profile.MinTLSVersion = string(configv1.TLSProfiles[configv1.TLSProfileModernType].MinTLSVersion)
 	}
