@@ -268,16 +268,15 @@ MAX_PARALLEL (testssl): %d
 
 	results := assembleResults(startTime, totalIPs, tlsConfig, discovery.Skipped, batchResults)
 
-	duration := time.Since(startTime)
 	fmt.Printf("\n========================================\n")
 	fmt.Printf("CLUSTER SCAN COMPLETE!\n")
 	fmt.Printf("========================================\n")
 	fmt.Printf("Total IPs processed: %d\n", results.ScannedIPs)
 	fmt.Printf("Total ports scanned: %d\n", len(batchResults))
 	fmt.Printf("Total ports skipped: %d\n", len(discovery.Skipped))
-	fmt.Printf("Total time: %v\n", duration)
+	fmt.Printf("Total time: %v\n", results.Duration)
 	if len(batchResults) > 0 {
-		fmt.Printf("Throughput: %.2f ports/min\n", float64(len(batchResults))/duration.Minutes())
+		fmt.Printf("Throughput: %.2f ports/min\n", float64(len(batchResults))/results.Duration.Minutes())
 	}
 	fmt.Printf("========================================\n")
 
@@ -304,15 +303,14 @@ func Scan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfig *k8
 	batchResults := batchScan(jobs, concurrentScans, client, tlsConfig, policy, timeouts, starttlsPorts)
 	results := assembleResults(startTime, 0, tlsConfig, batchResults)
 
-	duration := time.Since(startTime)
 	fmt.Printf("\n========================================\n")
 	fmt.Printf("SCAN COMPLETE!\n")
 	fmt.Printf("========================================\n")
 	fmt.Printf("Total IPs processed: %d\n", results.ScannedIPs)
 	fmt.Printf("Total targets: %d\n", len(jobs))
-	fmt.Printf("Total time: %v\n", duration)
+	fmt.Printf("Total time: %v\n", results.Duration)
 	if results.ScannedIPs > 0 {
-		fmt.Printf("Average time per host: %.2fs\n", duration.Seconds()/float64(results.ScannedIPs))
+		fmt.Printf("Average time per host: %.2fs\n", results.Duration.Seconds()/float64(results.ScannedIPs))
 	}
 	fmt.Printf("========================================\n")
 
@@ -563,8 +561,11 @@ func assembleResults(startTime time.Time, totalIPs int, tlsConfig *k8s.TLSSecuri
 		totalIPs = len(ipResultMap)
 	}
 
+	elapsed := time.Since(startTime)
 	results := ScanResults{
 		Timestamp:         startTime.Format(time.RFC3339),
+		Duration:          elapsed,
+		DurationSeconds:   elapsed.Seconds(),
 		TotalIPs:          totalIPs,
 		IPResults:         make([]IPResult, 0, len(ipResultMap)),
 		TLSSecurityConfig: tlsConfig,

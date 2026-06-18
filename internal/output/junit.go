@@ -10,12 +10,22 @@ import (
 	"github.com/openshift/tls-scanner/internal/scanner"
 )
 
+func hostname() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return "unknown"
+	}
+	return h
+}
+
 type JUnitTestSuite struct {
 	XMLName    xml.Name        `xml:"testsuite"`
 	Name       string          `xml:"name,attr"`
 	Tests      int             `xml:"tests,attr"`
 	Failures   int             `xml:"failures,attr"`
 	Time       float64         `xml:"time,attr"`
+	Timestamp  string          `xml:"timestamp,attr,omitempty"`
+	Hostname   string          `xml:"hostname,attr,omitempty"`
 	Properties []JUnitProperty `xml:"properties>property,omitempty"`
 	TestCases  []JUnitTestCase `xml:"testcase"`
 }
@@ -44,7 +54,10 @@ type JUnitProperty struct {
 
 func WriteJUnitOutput(scanResults scanner.ScanResults, filename string, pqcCheck bool) error {
 	testSuite := JUnitTestSuite{
-		Name: "TLSSecurityScan",
+		Name:      "TLSSecurityScan",
+		Time:      scanResults.Duration.Seconds(),
+		Timestamp: scanResults.Timestamp,
+		Hostname:  hostname(),
 	}
 
 	enforceTLSCompliance := scanner.TLSConfigComplianceFailuresEnforced(scanResults)
