@@ -4,6 +4,35 @@ import (
 	"testing"
 )
 
+func TestNormalizeHost(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain IPv4", "10.0.0.1", "10.0.0.1"},
+		{"bracketed IPv6", "[::1]", "::1"},
+		{"bracketed full IPv6", "[fd2e:6f44:5dd8::16]", "fd2e:6f44:5dd8::16"},
+		{"no brackets", "fd2e:6f44:5dd8::16", "fd2e:6f44:5dd8::16"},
+		{"whitespace trimmed", "  10.0.0.1  ", "10.0.0.1"},
+		{"whitespace with brackets", "  [::1]  ", "::1"},
+		{"empty string", "", ""},
+		{"single bracket only", "[", "["},
+		{"hostname", "example.com", "example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := NormalizeHost(tt.in); got != tt.want {
+				t.Errorf("NormalizeHost(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRemoveDuplicates(t *testing.T) {
 	t.Parallel()
 

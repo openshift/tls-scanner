@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/tls-scanner/internal/k8s"
 	"github.com/openshift/tls-scanner/internal/output"
 	"github.com/openshift/tls-scanner/internal/scanner"
+	"github.com/openshift/tls-scanner/internal/stringutil"
 	"github.com/openshift/tls-scanner/internal/timing"
 )
 
@@ -311,7 +312,7 @@ func run(args []string) (exitCode int) {
 		return 1
 	}
 
-	jobs := []scanner.ScanJob{{IP: normalizeHost(*host), Port: portNum}}
+	jobs := []scanner.ScanJob{{IP: stringutil.NormalizeHost(*host), Port: portNum}}
 
 	if *dryRun {
 		output.PrintDryRunTargets(jobs)
@@ -361,13 +362,5 @@ func parseTarget(target string) (string, int, error) {
 		return "", 0, err
 	}
 
-	return normalizeHost(host), portNum, nil
-}
-
-func normalizeHost(host string) string {
-	host = strings.TrimSpace(host)
-	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") && len(host) >= 2 {
-		return host[1 : len(host)-1]
-	}
-	return host
+	return stringutil.NormalizeHost(host), portNum, nil
 }
