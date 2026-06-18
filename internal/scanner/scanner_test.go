@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/tls-scanner/internal/k8s"
@@ -18,14 +18,14 @@ import (
 )
 
 func makePod(name, namespace, ip string, ports ...int32) k8s.PodInfo {
-	var containerPorts []v1.ContainerPort
+	var containerPorts []corev1.ContainerPort
 	for _, p := range ports {
-		containerPorts = append(containerPorts, v1.ContainerPort{ContainerPort: p, Protocol: v1.ProtocolTCP})
+		containerPorts = append(containerPorts, corev1.ContainerPort{ContainerPort: p, Protocol: corev1.ProtocolTCP})
 	}
-	pod := &v1.Pod{
+	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{{Name: "main", Ports: containerPorts}},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "main", Ports: containerPorts}},
 		},
 	}
 	return k8s.PodInfo{
@@ -712,20 +712,20 @@ func TestWriteTargetsFile(t *testing.T) {
 func TestDiscoverPortsFromPodSpec(t *testing.T) {
 	t.Parallel()
 
-	pod := &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
 				{
-					Ports: []v1.ContainerPort{
-						{ContainerPort: 8443, Protocol: v1.ProtocolTCP},
-						{ContainerPort: 53, Protocol: v1.ProtocolUDP},
+					Ports: []corev1.ContainerPort{
+						{ContainerPort: 8443, Protocol: corev1.ProtocolTCP},
+						{ContainerPort: 53, Protocol: corev1.ProtocolUDP},
 					},
 				},
 			},
-			InitContainers: []v1.Container{
+			InitContainers: []corev1.Container{
 				{
-					Ports: []v1.ContainerPort{
-						{ContainerPort: 9443, Protocol: v1.ProtocolTCP},
+					Ports: []corev1.ContainerPort{
+						{ContainerPort: 9443, Protocol: corev1.ProtocolTCP},
 					},
 				},
 			},
