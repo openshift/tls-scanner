@@ -11,7 +11,10 @@ func TestStarttlsProtoForProcess(t *testing.T) {
 		want string
 	}{
 		{"postgres", "postgres"},
+		{"postmaster", "postgres"},
+		{"pgbouncer", "postgres"},
 		{"mysqld", "mysql"},
+		{"mariadbd", "mysql"},
 		{"nginx", ""},
 		{"", ""},
 	} {

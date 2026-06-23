@@ -26,8 +26,11 @@ var knownStarttlsProtocols = map[string]bool{
 }
 
 var commToStarttls = map[string]string{
-	"postgres": "postgres",
-	"mysqld":   "mysql",
+	"postgres":   "postgres",
+	"postmaster": "postgres",
+	"pgbouncer":  "postgres",
+	"mysqld":     "mysql",
+	"mariadbd":   "mysql",
 }
 
 func StarttlsProtoForProcess(comm string) string {
