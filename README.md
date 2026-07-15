@@ -9,6 +9,67 @@ A TLS compliance scanner for OpenShift/Kubernetes clusters. Uses [testssl.sh](ht
 - **OpenShift/Kubernetes cluster access** - `oc` or `kubectl` configured to point to your target cluster.
 - **Sufficient privileges** - Permissions to create Jobs, and grant `cluster-reader` and `privileged` SCC to a ServiceAccount.
 
+## Running the binary directly
+
+The binary requires `testssl.sh` on `$PATH`. Build it first (`make build`), then:
+
+### Scan a single host (no cluster needed)
+
+```bash
+./bin/tls-scanner --host 192.0.2.1 --port 443
+```
+
+### Scan an explicit list of targets (no cluster needed)
+
+```bash
+./bin/tls-scanner --targets 192.0.2.1:443,192.0.2.2:8443
+# or via a YAML template:
+./bin/tls-scanner --template targets.yaml
+```
+
+### Scan all pods in a cluster
+
+```bash
+./bin/tls-scanner --all-pods                                  # entire cluster
+./bin/tls-scanner --all-pods --namespace-filter openshift-kube-apiserver
+./bin/tls-scanner --all-pods --component-filter kube-apiserver,etcd
+```
+
+`--all-pods` requires `$KUBECONFIG` (or in-cluster service account credentials) with `cluster-reader` and `privileged` SCC. The k8s client is used for:
+- Pod listing and IP discovery
+- `/proc/net/tcp` port discovery (exec into pods) — falls back to `containerPorts` from pod spec when exec is unavailable
+- Localhost-only filtering (ports bound to 127.0.0.1 are skipped)
+- Process name and listen-address annotation
+- Fetching the cluster's TLS security profile (`APIServer`, `IngressController`, `KubeletConfig` CRs) and `TLSAdherence` policy
+
+### Compliance checking and `--tls-profile-type`
+
+TLS profile compliance is only checked when a `TLSSecurityProfile` is available. There are two ways to supply one:
+
+- **With `--all-pods`**: the profile is read automatically from the cluster's `APIServer` CR. Whether compliance *failures* produce a non-zero exit code depends on `TLSAdherence`: only `StrictAllComponents` causes CI failure; `NoOpinion` and `LegacyAdheringComponentsOnly` do not.
+- **Without cluster access** (single host, `--targets`, `--template`): no profile is fetched, so compliance fields are unpopulated and `HasComplianceFailures` always returns false — the scan still runs but never fails on TLS profile drift.
+- **`--tls-profile-type Old|Intermediate|Modern`**: explicitly supplies a profile and forces `TLSAdherence: StrictAllComponents`, so compliance violations always fail. Works with or without cluster access.
+
+### PQC check
+
+```bash
+./bin/tls-scanner --host 192.0.2.1 --port 443 --pqc-check
+./bin/tls-scanner --all-pods --pqc-check
+```
+
+`--pqc-check` works with any target mode and does not need cluster access. Compliance drift is ignored; only TLS 1.3 + ML-KEM (`x25519mlkem768` / `mlkem768`) support is checked, and failures always produce a non-zero exit code.
+
+### Output flags (all modes)
+
+```bash
+--artifact-dir /tmp          # directory for output files (default: /tmp)
+--json-file results.json
+--csv-file  results.csv
+--junit-file results.xml
+--log-file  scan.log
+--dry-run                    # discover targets and print them without scanning
+```
+
 ## Installation & Usage
 
 The scanner is designed to be run from within the cluster it is scanning. This is the most reliable way to ensure network access to all pods. The included `deploy.sh` script automates the build and deployment process.
