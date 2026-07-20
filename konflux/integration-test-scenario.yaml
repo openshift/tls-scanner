@@ -8,7 +8,7 @@ apiVersion: appstudio.redhat.com/v1beta2
 kind: IntegrationTestScenario
 metadata:
   name: tls-scanner-self-test
-  namespace: <TENANT_NAMESPACE>
+  namespace: ocp-isc-tenant
   labels:
     # Failures won't block the Snapshot/PR from passing while this test is being bootstrapped.
     test.appstudio.openshift.io/optional: "true"
@@ -37,7 +37,7 @@ apiVersion: appstudio.redhat.com/v1beta2
 kind: IntegrationTestScenario
 metadata:
   name: tls-scanner-smoke-test
-  namespace: <TENANT_NAMESPACE>
+  namespace: ocp-isc-tenant
   labels:
     test.appstudio.openshift.io/optional: "true"
 spec:

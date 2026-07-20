@@ -12,7 +12,7 @@ apiVersion: appstudio.redhat.com/v1alpha1
 kind: Component
 metadata:
   name: tls-scanner
-  namespace: <TENANT_NAMESPACE>
+  namespace: ocp-isc-tenant
   annotations:
     build.appstudio.openshift.io/request: configure-pac
     git-provider: github
@@ -30,7 +30,7 @@ apiVersion: appstudio.redhat.com/v1alpha1
 kind: ImageRepository
 metadata:
   name: tls-scanner
-  namespace: <TENANT_NAMESPACE>
+  namespace: ocp-isc-tenant
   annotations:
     image-controller.appstudio.redhat.com/update-component-image: "true"
   labels:
@@ -38,5 +38,5 @@ metadata:
     appstudio.redhat.com/component: tls-scanner
 spec:
   image:
-    name: <TENANT_NAMESPACE>/tls-scanner
+    name: ocp-isc-tenant/tls-scanner
     visibility: public

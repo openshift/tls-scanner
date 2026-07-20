@@ -31,8 +31,8 @@ git at run time.
 
 ## Prerequisites
 
-Replace every `<TENANT_NAMESPACE>` placeholder with your Konflux workspace
-tenant namespace (commonly `<workspace-name>-tenant`).
+This repo's Konflux tenant namespace is **`ocp-isc-tenant`**. Manifests under
+`konflux/*.yaml` already use that value.
 
 Also required:
 
@@ -41,13 +41,11 @@ Also required:
 
 ## Onboarding tls-scanner (apply order)
 
-1. Fill in `<TENANT_NAMESPACE>` in `application.yaml`, `component.yaml`, and
-   `integration-test-scenario.yaml`.
-2. `oc apply -f konflux/application.yaml`
-3. `oc apply -f konflux/component.yaml` — Konflux opens a separate PaC PR with
+1. `oc apply -f konflux/application.yaml` (namespace: `ocp-isc-tenant`)
+2. `oc apply -f konflux/component.yaml` — Konflux opens a separate PaC PR with
    generated `.tekton/*.yaml` build pipelines. Review and merge **that** PR
    before expecting builds.
-4. After a build Snapshot exists: `oc apply -f konflux/integration-test-scenario.yaml`
+3. After a build Snapshot exists: `oc apply -f konflux/integration-test-scenario.yaml`
 
 ### Validating pipelines from a feature PR
 
