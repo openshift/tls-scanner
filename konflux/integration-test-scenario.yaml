@@ -1,0 +1,60 @@
+# Apply to the Konflux cluster: oc apply -f integration-test-scenario.yaml
+# Not watched by Konflux from git -- see konflux/README.md.
+#
+# To validate this on the feature/PR branch before merging, temporarily change
+# spec.resolverRef.params[revision] below to the branch name, re-apply, then
+# open/update the PR. Switch it back to `main` before merging.
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  name: tls-scanner-self-test
+  namespace: <TENANT_NAMESPACE>
+  labels:
+    # Failures won't block the Snapshot/PR from passing while this test is being bootstrapped.
+    test.appstudio.openshift.io/optional: "true"
+spec:
+  application: tls-scanner
+  contexts:
+    - description: Smoke + TLS fixture Job scan against the just-built tls-scanner image.
+      name: application
+  resolverRef:
+    resolver: git
+    params:
+      - name: url
+        value: https://github.com/openshift/tls-scanner.git
+      # TEMP: point at the feature branch for PR validation. Change back to main before merge.
+      - name: revision
+        value: feat/konflux-tls-scan
+      - name: pathInRepo
+        value: konflux/pipelines/tls-scanner-self-test.yaml
+  params:
+    - name: COMPONENT_NAME
+      value: tls-scanner
+---
+# Optional lighter check: image --version/--help only. Keep or remove once
+# tls-scanner-self-test is stable in your tenant.
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  name: tls-scanner-smoke-test
+  namespace: <TENANT_NAMESPACE>
+  labels:
+    test.appstudio.openshift.io/optional: "true"
+spec:
+  application: tls-scanner
+  contexts:
+    - description: Confirm the tls-scanner image is runnable.
+      name: application
+  resolverRef:
+    resolver: git
+    params:
+      - name: url
+        value: https://github.com/openshift/tls-scanner.git
+      # TEMP: point at the feature branch for PR validation. Change back to main before merge.
+      - name: revision
+        value: feat/konflux-tls-scan
+      - name: pathInRepo
+        value: konflux/pipelines/tls-scanner-smoke-test.yaml
+  params:
+    - name: COMPONENT_NAME
+      value: tls-scanner

@@ -1,0 +1,9 @@
+# Apply to the Konflux cluster: oc apply -f application.yaml
+# Not watched by Konflux from git -- see konflux/README.md.
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Application
+metadata:
+  name: tls-scanner
+  namespace: <TENANT_NAMESPACE>
+spec:
+  displayName: TLS Scanner
