@@ -58,6 +58,7 @@ func run(args []string) (exitCode int) {
 	jsonFile := fs.String("json-file", "", "Output results in JSON format to specified file in artifact-dir")
 	csvFile := fs.String("csv-file", "", "Output results in CSV format to specified file in artifact-dir")
 	junitFile := fs.String("junit-file", "", "Output results in JUnit XML format to specified file in artifact-dir")
+	attestationFile := fs.String("attestation-file", "", "Write unsigned TLS posture attestation JSON (component rollup) to specified file in artifact-dir")
 	concurrentScans := fs.Int("j", 0, "Number of concurrent scans; 0 = runtime.NumCPU()")
 	allPods := fs.Bool("all-pods", false, "Scan all pods in the cluster (overrides --host)")
 	componentFilter := fs.String("component-filter", "", "Filter pods by a comma-separated list of component names (only used with --all-pods)")
@@ -176,6 +177,25 @@ func run(args []string) (exitCode int) {
 	var client *k8s.Client
 	var pods []k8s.PodInfo
 
+	writeOutputs := func(scanResults scanner.ScanResults) error {
+		meta := &output.AttestationMeta{
+			ScannerVersion: version,
+			ScannerCommit:  commit,
+		}
+		if client != nil {
+			if cv, err := client.GetClusterVersionInfo(); err != nil {
+				slog.Debug("cluster version unavailable for attestation", "error", err)
+			} else {
+				meta.ClusterVersion = cv
+			}
+		}
+		return output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, *attestationFile, isPQCCheck, meta)
+	}
+
+	noFileOutputs := func() bool {
+		return *jsonFile == "" && *csvFile == "" && *junitFile == "" && *attestationFile == ""
+	}
+
 	if *targets != "" {
 		targetList := strings.Split(*targets, ",")
 		if len(targetList) == 0 || (len(targetList) == 1 && targetList[0] == "") {
@@ -206,13 +226,13 @@ func run(args []string) (exitCode int) {
 		scanResults := scanner.Scan(jobs, *concurrentScans, nil, tlsProfileOverride, policy, timeouts, starttlsPorts)
 		finalScanResults = &scanResults
 
-		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
+		if err := writeOutputs(scanResults); err != nil {
 			slog.Error("writing output files", "error", err)
 			return 1
 		}
 		if isPQCCheck {
 			output.PrintPQCClusterResults(scanResults)
-		} else if *jsonFile == "" && *csvFile == "" && *junitFile == "" {
+		} else if noFileOutputs() {
 			output.PrintClusterResults(scanResults)
 		}
 
@@ -229,13 +249,13 @@ func run(args []string) (exitCode int) {
 		scanResults := scanner.Scan(jobs, *concurrentScans, nil, tlsProfileOverride, policy, timeouts, starttlsPorts)
 		finalScanResults = &scanResults
 
-		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
+		if err := writeOutputs(scanResults); err != nil {
 			slog.Error("writing output files", "error", err)
 			return 1
 		}
 		if isPQCCheck {
 			output.PrintPQCClusterResults(scanResults)
-		} else if *jsonFile == "" && *csvFile == "" && *junitFile == "" {
+		} else if noFileOutputs() {
 			output.PrintClusterResults(scanResults)
 		}
 
@@ -292,13 +312,13 @@ func run(args []string) (exitCode int) {
 		scanResults := scanner.PerformClusterScan(pods, *concurrentScans, client, policy, timeouts, tlsProfileOverride, starttlsPorts)
 		finalScanResults = &scanResults
 
-		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
+		if err := writeOutputs(scanResults); err != nil {
 			slog.Error("writing output files", "error", err)
 			return 1
 		}
 		if isPQCCheck {
 			output.PrintPQCClusterResults(scanResults)
-		} else if *jsonFile == "" && *csvFile == "" && *junitFile == "" {
+		} else if noFileOutputs() {
 			output.PrintClusterResults(scanResults)
 		}
 
@@ -321,13 +341,13 @@ func run(args []string) (exitCode int) {
 	scanResults := scanner.Scan(jobs, *concurrentScans, client, tlsProfileOverride, policy, timeouts, starttlsPorts)
 	finalScanResults = &scanResults
 
-	if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
+	if err := writeOutputs(scanResults); err != nil {
 		slog.Error("writing output files", "error", err)
 		return 1
 	}
 	if isPQCCheck {
 		output.PrintPQCClusterResults(scanResults)
-	} else if *jsonFile == "" && *csvFile == "" && *junitFile == "" {
+	} else if noFileOutputs() {
 		output.PrintParsedResults(scanResults)
 	}
 
