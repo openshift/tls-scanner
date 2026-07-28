@@ -77,6 +77,16 @@ type Client struct {
 	// procListenAddrMap holds the decoded listen address for every port seen in
 	// /proc/net/tcp(6). It covers all containers in a pod (shared network namespace).
 	procListenAddrMap map[string]map[int]string
+	// podOwnedPorts holds, per pod (keyed by "namespace/name"), the set of
+	// ports whose listening socket inode was resolved to a process visible in
+	// THAT pod's own PID namespace. Unlike processNameMap/listenInfoMap (which
+	// are intentionally keyed by IP and shared across every pod that reports
+	// it, since a given ip:port has exactly one real listener), ownership for
+	// filtering purposes must never be merged across pods: hostNetwork pods on
+	// the same node all share the node's IP, so an IP-keyed lookup would leak
+	// ports legitimately owned by one hostNetwork pod (e.g. ovnkube-node) into
+	// the scan target list of a completely unrelated one (see issue #85).
+	podOwnedPorts     map[string]map[int]bool
 	processCacheMutex sync.Mutex
 	namespace         string
 	configClient      *configclientset.Clientset

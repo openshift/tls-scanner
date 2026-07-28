@@ -89,17 +89,26 @@ func DiscoverTargets(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client
 					}
 				}
 
-				var processMap map[string]map[int]string
+				var ownedPorts map[int]bool
 				if client != nil && procAvailable {
-					processMap = client.GetCachedProcessMap(pod.IPs)
+					// Ownership must be resolved per-pod, not per-IP: hostNetwork
+					// pods share the node's IP, so an IP-keyed lookup would leak
+					// ports legitimately owned by other hostNetwork pods on the
+					// same node into this pod's scan target list (see issue #85).
+					ownedPorts = client.GetOwnedPorts(pod)
 				}
 
-				if pod.Pod.Spec.HostNetwork && processMap != nil && len(procPorts) > 0 {
+				// ownedPorts == nil means /proc discovery never ran for this pod, so
+				// there is nothing to filter by. An empty-but-non-nil ownedPorts is a
+				// valid discovery result (no port resolved to this pod's own PID
+				// namespace) and must still be filtered down to secondary-container
+				// spec ports, if any — it is not evidence that discovery failed.
+				if pod.Pod.Spec.HostNetwork && ownedPorts != nil && len(procPorts) > 0 {
 					var secondarySpecPorts []int
 					if len(pod.Containers) > 1 {
 						secondarySpecPorts = k8s.DiscoverPortsFromSecondaryContainers(pod.Pod, pod.Containers[0])
 					}
-					procPorts = filterByProcessPorts(processMap, procPorts, secondarySpecPorts)
+					procPorts = filterByProcessPorts(ownedPorts, procPorts, secondarySpecPorts)
 				}
 
 				// When /proc data is available use it as the ground truth — only
@@ -596,13 +605,18 @@ func LimitPodsToIPCount(pods []k8s.PodInfo, maxIPs int) []k8s.PodInfo {
 	return limitedPods
 }
 
-// filterByProcessPorts keeps procPorts owned by this pod (via /proc inode resolution or pod spec).
-func filterByProcessPorts(processMap map[string]map[int]string, procPorts []int, specPorts []int) []int {
-	owned := make(map[int]bool)
-	for _, portMap := range processMap {
-		for port := range portMap {
-			owned[port] = true
-		}
+// filterByProcessPorts keeps procPorts owned by this pod: either resolved via
+// /proc inode resolution scoped to this pod's own PID namespace (ownedPorts),
+// or declared in a secondary container's pod spec (specPorts).
+//
+// ownedPorts must come from a per-pod-scoped source (e.g. Client.GetOwnedPorts)
+// rather than a cache shared across pods on the same IP, otherwise ports
+// legitimately owned by a different hostNetwork pod on the same node can leak
+// through as false positives (see issue #85).
+func filterByProcessPorts(ownedPorts map[int]bool, procPorts []int, specPorts []int) []int {
+	owned := make(map[int]bool, len(ownedPorts)+len(specPorts))
+	for port := range ownedPorts {
+		owned[port] = true
 	}
 	for _, p := range specPorts {
 		owned[p] = true
