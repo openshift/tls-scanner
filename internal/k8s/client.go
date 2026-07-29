@@ -66,6 +66,7 @@ func NewClient() (*Client, error) {
 		processNameMap:    make(map[string]map[int]string),
 		listenInfoMap:     make(map[string]map[int]ListenInfo),
 		procListenAddrMap: make(map[string]map[int]string),
+		podOwnedPorts:     make(map[string]map[int]bool),
 		namespace:         namespace,
 		configClient:      configClient,
 		operatorClient:    operatorClient,

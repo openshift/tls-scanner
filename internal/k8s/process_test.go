@@ -11,6 +11,7 @@ func newTestClient() *Client {
 		processNameMap:    make(map[string]map[int]string),
 		listenInfoMap:     make(map[string]map[int]ListenInfo),
 		procListenAddrMap: make(map[string]map[int]string),
+		podOwnedPorts:     make(map[string]map[int]bool),
 	}
 }
 
@@ -74,22 +75,109 @@ func TestCacheProcListenInfo(t *testing.T) {
 	if _, ok := c.processNameMap["10.0.0.1"][8080]; ok {
 		t.Error("expected no process name for port without inode mapping")
 	}
+	if !c.podOwnedPorts[podOwnershipKey(pod)][443] {
+		t.Error("expected port 443 to be recorded as owned by pod")
+	}
+	if c.podOwnedPorts[podOwnershipKey(pod)][8080] {
+		t.Error("expected port 8080 (no inode mapping) to not be recorded as owned")
+	}
 }
 
-func TestGetCachedProcessMap(t *testing.T) {
+func TestGetOwnedPorts(t *testing.T) {
 	c := newTestClient()
-	c.processNameMap["10.0.0.1"] = map[int]string{443: "nginx", 8443: "sidecar"}
-
-	got := c.GetCachedProcessMap([]string{"10.0.0.1", "10.0.0.2"})
-	if got["10.0.0.1"][443] != "nginx" || got["10.0.0.1"][8443] != "sidecar" {
-		t.Errorf("GetCachedProcessMap() = %v", got)
+	pod := PodInfo{Namespace: "ns", Name: "pod-a", IPs: []string{"10.0.0.1"}}
+	entries := map[int]ProcListenEntry{
+		443:  {Addr: "0.0.0.0", Inode: 1},
+		8443: {Addr: "0.0.0.0", Inode: 2},
 	}
-	if _, ok := got["10.0.0.2"]; ok {
-		t.Error("expected no entry for IP without process data")
+	inodeComm := map[uint64]string{1: "nginx", 2: "sidecar"}
+	c.cacheProcListenInfo(pod, entries, inodeComm)
+
+	got := c.GetOwnedPorts(pod)
+	if !got[443] || !got[8443] {
+		t.Errorf("GetOwnedPorts() = %v, want ports 443 and 8443 owned", got)
 	}
 
-	if c.GetCachedProcessMap(nil) != nil {
-		t.Error("expected nil for empty ips with no cache")
+	other := PodInfo{Namespace: "ns", Name: "pod-b", IPs: []string{"10.0.0.2"}}
+	if c.GetOwnedPorts(other) != nil {
+		t.Error("expected nil for pod with no cached ownership data")
+	}
+}
+
+// TestGetOwnedPorts_EmptyOwnershipIsNotNil reproduces a bug where a pod with
+// non-empty /proc/net/tcp results but zero resolvable inode-to-process
+// matches (e.g. every listening socket belongs to another container's PID
+// namespace) was indistinguishable from a pod for which /proc discovery
+// never ran at all. Both cases populated podOwnedPorts with an empty map,
+// but GetOwnedPorts collapsed "discovered, nothing owned" into nil, which
+// callers use as a signal to skip filtering entirely — silently letting
+// unrelated host listeners through on hostNetwork pods.
+func TestGetOwnedPorts_EmptyOwnershipIsNotNil(t *testing.T) {
+	c := newTestClient()
+	pod := PodInfo{Namespace: "ns", Name: "pod-c", IPs: []string{"10.0.0.3"}}
+
+	// Non-empty /proc results (entries), but no inode resolves to a process
+	// visible in this pod's own PID namespace.
+	entries := map[int]ProcListenEntry{
+		9100: {Addr: "0.0.0.0", Inode: 42},
+	}
+	inodeComm := map[uint64]string{} // no matches
+	c.cacheProcListenInfo(pod, entries, inodeComm)
+
+	got := c.GetOwnedPorts(pod)
+	if got == nil {
+		t.Fatal("GetOwnedPorts() = nil, want non-nil empty map for a pod with a successfully " +
+			"populated but empty ownership set")
+	}
+	if len(got) != 0 {
+		t.Errorf("GetOwnedPorts() = %v, want empty map", got)
+	}
+
+	// A pod for which discovery never ran must still report nil, so callers
+	// can distinguish "no data" from "data says nothing is owned".
+	neverDiscovered := PodInfo{Namespace: "ns", Name: "pod-d", IPs: []string{"10.0.0.4"}}
+	if c.GetOwnedPorts(neverDiscovered) != nil {
+		t.Error("expected nil for pod with no cached ownership data")
+	}
+}
+
+// TestGetOwnedPorts_NoLeakAcrossUkrelatedHostNetworkPods reproduces a port
+// misattribution bug when the pod is a hostNetwork pod.
+func TestGetOwnedPorts_NoLeakAcrossUnrelatedHostNetworkPods(t *testing.T) {
+	c := newTestClient()
+	nodeIP := "10.0.1.5"
+
+	ovnkubePod := PodInfo{Namespace: "openshift-ovn-kubernetes", Name: "ovnkube-node-abc12", IPs: []string{nodeIP}}
+	ovnkubeEntries := map[int]ProcListenEntry{
+		9103: {Addr: "0.0.0.0", Inode: 1},
+		9105: {Addr: "0.0.0.0", Inode: 2},
+	}
+	ovnkubeInodeComm := map[uint64]string{1: "ovnkube-controller", 2: "ovnkube-controller"}
+	c.cacheProcListenInfo(ovnkubePod, ovnkubeEntries, ovnkubeInodeComm)
+
+	filestorePod := PodInfo{
+		Namespace: "openshift-cluster-csi-drivers",
+		Name:      "gcp-filestore-csi-driver-controller-548d7c67d6-db7tx",
+		IPs:       []string{nodeIP},
+	}
+	filestoreEntries := map[int]ProcListenEntry{
+		9212: {Addr: "0.0.0.0", Inode: 3},
+	}
+	filestoreInodeComm := map[uint64]string{3: "kube-rbac-proxy"}
+	c.cacheProcListenInfo(filestorePod, filestoreEntries, filestoreInodeComm)
+
+	owned := c.GetOwnedPorts(filestorePod)
+
+	if owned[9103] {
+		t.Error("GetOwnedPorts() for the filestore pod incorrectly includes port 9103, " +
+			"owned by ovnkube-node, not the filestore controller (see issue #85)")
+	}
+	if owned[9105] {
+		t.Error("GetOwnedPorts() for the filestore pod incorrectly includes port 9105, " +
+			"owned by ovnkube-node, not the filestore controller (see issue #85)")
+	}
+	if !owned[9212] {
+		t.Error("GetOwnedPorts() for the filestore pod should still include its own port 9212")
 	}
 }
 

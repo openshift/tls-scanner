@@ -746,52 +746,70 @@ func TestFilterByProcessPorts(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		processMap map[string]map[int]string
+		ownedPorts map[int]bool
 		procPorts  []int
 		specPorts  []int
 		want       []int
 	}{
 		{
-			name: "keeps process-mapped ports",
-			processMap: map[string]map[int]string{
-				"10.0.0.1": {9091: "main", 9043: "sidecar"},
-			},
-			procPorts: []int{9091, 9043, 6443, 10257},
-			specPorts: []int{9091, 9043},
-			want:      []int{9091, 9043},
+			name:       "keeps process-mapped ports",
+			ownedPorts: map[int]bool{9091: true, 9043: true},
+			procPorts:  []int{9091, 9043, 6443, 10257},
+			specPorts:  []int{9091, 9043},
+			want:       []int{9091, 9043},
 		},
 		{
-			name: "spec-declared port preserved when process map misses it",
-			processMap: map[string]map[int]string{
-				"10.0.0.1": {9091: "main", 9043: "sidecar"},
-			},
-			procPorts: []int{9091, 9043, 8443, 6443, 10257},
-			specPorts: []int{9091, 9043, 8443},
-			want:      []int{9091, 9043, 8443},
+			name:       "spec-declared port preserved when process map misses it",
+			ownedPorts: map[int]bool{9091: true, 9043: true},
+			procPorts:  []int{9091, 9043, 8443, 6443, 10257},
+			specPorts:  []int{9091, 9043, 8443},
+			want:       []int{9091, 9043, 8443},
 		},
 		{
-			name: "unowned port not in spec still dropped",
-			processMap: map[string]map[int]string{
-				"10.0.0.1": {9091: "main"},
-			},
-			procPorts: []int{9091, 6443, 10257},
-			specPorts: []int{9091},
-			want:      []int{9091},
+			name:       "unowned port not in spec still dropped",
+			ownedPorts: map[int]bool{9091: true},
+			procPorts:  []int{9091, 6443, 10257},
+			specPorts:  []int{9091},
+			want:       []int{9091},
 		},
 		{
-			name: "nil specPorts — only process-owned ports kept",
-			processMap: map[string]map[int]string{
-				"10.0.0.1": {9091: "main"},
-			},
-			procPorts: []int{9091, 6443, 10257},
-			specPorts: nil,
-			want:      []int{9091},
+			name:       "nil specPorts — only process-owned ports kept",
+			ownedPorts: map[int]bool{9091: true},
+			procPorts:  []int{9091, 6443, 10257},
+			specPorts:  nil,
+			want:       []int{9091},
+		},
+		{
+			name:       "ports owned by another pod are not credited to this one",
+			ownedPorts: map[int]bool{9212: true},
+			procPorts:  []int{9212, 9103, 9105, 9108},
+			specPorts:  nil,
+			want:       []int{9212},
+		},
+		{
+			// A successfully discovered but empty ownership set (e.g. every
+			// listening socket's inode belongs to another container's PID
+			// namespace) must still be filtered down to only the ports declared
+			// by secondary containers — it is not evidence that discovery was
+			// unavailable, and must not fall back to keeping every proc port.
+			name:       "empty but non-nil ownedPorts still filters down to secondary spec ports",
+			ownedPorts: map[int]bool{},
+			procPorts:  []int{9100, 9101, 9102},
+			specPorts:  []int{9101},
+			want:       []int{9101},
+		},
+		{
+			name:       "empty but non-nil ownedPorts with no spec ports drops everything",
+			ownedPorts: map[int]bool{},
+			procPorts:  []int{9100, 9101, 9102},
+			specPorts:  nil,
+			want:       nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := filterByProcessPorts(tt.processMap, tt.procPorts, tt.specPorts)
+			got := filterByProcessPorts(tt.ownedPorts, tt.procPorts, tt.specPorts)
 			slices.Sort(got)
 			slices.Sort(tt.want)
 			if !slices.Equal(got, tt.want) {

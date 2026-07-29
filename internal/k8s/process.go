@@ -4,6 +4,11 @@ func (c *Client) cacheProcListenInfo(pod PodInfo, entries map[int]ProcListenEntr
 	c.processCacheMutex.Lock()
 	defer c.processCacheMutex.Unlock()
 
+	podKey := podOwnershipKey(pod)
+	if _, ok := c.podOwnedPorts[podKey]; !ok {
+		c.podOwnedPorts[podKey] = make(map[int]bool)
+	}
+
 	for _, ip := range pod.IPs {
 		if _, ok := c.procListenAddrMap[ip]; !ok {
 			c.procListenAddrMap[ip] = make(map[int]string)
@@ -28,31 +33,48 @@ func (c *Client) cacheProcListenInfo(pod PodInfo, entries map[int]ProcListenEntr
 				ListenAddress: entry.Addr,
 				ProcessName:   comm,
 			}
+			// Ownership is scoped to THIS pod only — never merged with other
+			// pods, even ones sharing the same IP (see podOwnedPorts doc).
+			c.podOwnedPorts[podKey][port] = true
 		}
 	}
 }
 
-// GetCachedProcessMap returns per-IP port→process maps populated by DiscoverPortsFromProc.
-func (c *Client) GetCachedProcessMap(ips []string) map[string]map[int]string {
+// podOwnershipKey uniquely identifies a pod for ownership-scoping purposes.
+// Deliberately independent of IP, since hostNetwork pods share the node's IP.
+func podOwnershipKey(pod PodInfo) string {
+	return pod.Namespace + "/" + pod.Name
+}
+
+// GetOwnedPorts returns the set of ports whose listening process was resolved
+// specifically within pod's own PID namespace (i.e. genuinely running in one
+// of the pod's own containers), as observed by a prior DiscoverPortsFromProc
+// call for this exact pod.
+//
+// This is intentionally NOT an IP-based lookup: for hostNetwork pods, many
+// unrelated pods on the same node report the same IP, so keying by IP alone
+// would return ports resolved by other pods entirely (see issue #85).
+//
+// A nil return means /proc discovery never ran (or found nothing at all) for
+// this pod, i.e. cacheProcListenInfo was never invoked. A non-nil, possibly
+// empty, map means discovery ran successfully but resolved zero ports to a
+// process in this pod's own PID namespace — a valid outcome (e.g. every
+// listening socket's inode belongs to another container's namespace), and
+// callers must still treat it as ground truth for filtering rather than
+// falling back as if ownership data were unavailable.
+func (c *Client) GetOwnedPorts(pod PodInfo) map[int]bool {
 	c.processCacheMutex.Lock()
 	defer c.processCacheMutex.Unlock()
 
-	result := make(map[string]map[int]string)
-	for _, ip := range ips {
-		portMap, ok := c.processNameMap[ip]
-		if !ok || len(portMap) == 0 {
-			continue
-		}
-		copied := make(map[int]string, len(portMap))
-		for port, name := range portMap {
-			copied[port] = name
-		}
-		result[ip] = copied
-	}
-	if len(result) == 0 {
+	owned, ok := c.podOwnedPorts[podOwnershipKey(pod)]
+	if !ok {
 		return nil
 	}
-	return result
+	copied := make(map[int]bool, len(owned))
+	for port := range owned {
+		copied[port] = true
+	}
+	return copied
 }
 
 func (c *Client) IsLocalhostOnly(ip string, port int) (bool, string) {
