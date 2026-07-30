@@ -17,8 +17,12 @@
 #   NAMESPACE        - Target namespace (default: current oc project)
 #   NAMESPACE_FILTER - Comma-separated namespace list to scan
 #   LIMIT_IPS        - Limit number of IPs to scan (default: 0 = no limit)
-#   SCANNER_CPU      - CPU request/limit for scanner pod (default: 4)
-#   SCANNER_MEM      - Memory request/limit for scanner pod (default: 4Gi)
+#   SCANNER_CPU_REQUEST - CPU request for scanner pod (default: 500m; falls back to SCANNER_CPU if set)
+#   SCANNER_CPU_LIMIT   - CPU limit for scanner pod (default: 4; falls back to SCANNER_CPU if set)
+#   SCANNER_CPU      - (Deprecated) Sets both CPU request and limit if the vars above are unset
+#   SCANNER_MEM_REQUEST - Memory request for scanner pod (default: 4Gi; falls back to SCANNER_MEM if set)
+#   SCANNER_MEM_LIMIT   - Memory limit for scanner pod (default: 4Gi; falls back to SCANNER_MEM if set)
+#   SCANNER_MEM      - (Deprecated) Sets both memory request and limit if the vars above are unset
 #   SCANNER_PARALLEL - Parallel scan count (default: 4)
 #   ARTIFACT_WAIT    - Seconds to keep pod alive after scan for artifact collection (default: 30, CI uses 300)
 #   TLS_TEST_TIMEOUT - Timeout for cluster stabilization during TLS tests (default: 600)
@@ -208,11 +212,17 @@ EOF
         STARTTLS_PORTS_ARG="--starttls-ports $(echo "${STARTTLS_PORTS}" | tr -d ' ')"
     fi
 
-    SCANNER_CPU="${SCANNER_CPU:-4}"
-    SCANNER_MEM="${SCANNER_MEM:-4Gi}"
+    # SCANNER_CPU/SCANNER_MEM are deprecated but still honored as fallback
+    # defaults for both request and limit when the split vars aren't
+    # explicitly set, so that a lower CPU request (e.g. 500m) can get the
+    # Pod scheduled while still allowing it to burst up to the higher limit.
+    SCANNER_CPU_REQUEST="${SCANNER_CPU_REQUEST:-${SCANNER_CPU:-500m}}"
+    SCANNER_CPU_LIMIT="${SCANNER_CPU_LIMIT:-${SCANNER_CPU:-4}}"
+    SCANNER_MEM_REQUEST="${SCANNER_MEM_REQUEST:-${SCANNER_MEM:-4Gi}}"
+    SCANNER_MEM_LIMIT="${SCANNER_MEM_LIMIT:-${SCANNER_MEM:-4Gi}}"
     SCANNER_PARALLEL="${SCANNER_PARALLEL:-4}"
     ARTIFACT_WAIT="${ARTIFACT_WAIT:-30}"
-    sed -e "s|\\\${SCANNER_IMAGE}|${SCANNER_IMAGE}|g" -e "s|\\\${NAMESPACE}|${NAMESPACE}|g" -e "s|\\\${JOB_NAME}|${JOB_NAME}|g" -e "s|\\\${NAMESPACE_FILTER_ARG}|${NAMESPACE_FILTER_ARG}|g" -e "s|\\\${LIMIT_IPS_ARG}|${LIMIT_IPS_ARG}|g" -e "s|\\\${STARTTLS_PORTS_ARG}|${STARTTLS_PORTS_ARG}|g" -e "s|\\\${SCANNER_CPU:-4}|${SCANNER_CPU}|g" -e "s|\\\${SCANNER_MEM:-4Gi}|${SCANNER_MEM}|g" -e "s|\\\${SCANNER_PARALLEL:-4}|${SCANNER_PARALLEL}|g" -e "s|\\\${ARTIFACT_WAIT:-300}|${ARTIFACT_WAIT}|g" "$JOB_TEMPLATE" | oc apply -f -
+    sed -e "s|\\\${SCANNER_IMAGE}|${SCANNER_IMAGE}|g" -e "s|\\\${NAMESPACE}|${NAMESPACE}|g" -e "s|\\\${JOB_NAME}|${JOB_NAME}|g" -e "s|\\\${NAMESPACE_FILTER_ARG}|${NAMESPACE_FILTER_ARG}|g" -e "s|\\\${LIMIT_IPS_ARG}|${LIMIT_IPS_ARG}|g" -e "s|\\\${STARTTLS_PORTS_ARG}|${STARTTLS_PORTS_ARG}|g" -e "s|\\\${SCANNER_CPU_REQUEST:-500m}|${SCANNER_CPU_REQUEST}|g" -e "s|\\\${SCANNER_CPU_LIMIT:-4}|${SCANNER_CPU_LIMIT}|g" -e "s|\\\${SCANNER_MEM_REQUEST:-4Gi}|${SCANNER_MEM_REQUEST}|g" -e "s|\\\${SCANNER_MEM_LIMIT:-4Gi}|${SCANNER_MEM_LIMIT}|g" -e "s|\\\${SCANNER_PARALLEL:-4}|${SCANNER_PARALLEL}|g" -e "s|\\\${ARTIFACT_WAIT:-300}|${ARTIFACT_WAIT}|g" "$JOB_TEMPLATE" | oc apply -f -
     check_error "Applying Job manifest"
 
     echo "--> Scanner Job '${JOB_NAME}' deployed."

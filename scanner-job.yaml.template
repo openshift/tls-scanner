@@ -44,11 +44,11 @@ spec:
             exit 0
         resources:
           requests:
-            cpu: "${SCANNER_CPU:-4}"
-            memory: "${SCANNER_MEM:-4Gi}"
+            cpu: "${SCANNER_CPU_REQUEST:-500m}"
+            memory: "${SCANNER_MEM_REQUEST:-4Gi}"
           limits:
-            cpu: "${SCANNER_CPU:-4}"
-            memory: "${SCANNER_MEM:-4Gi}"
+            cpu: "${SCANNER_CPU_LIMIT:-4}"
+            memory: "${SCANNER_MEM_LIMIT:-4Gi}"
         securityContext:
           privileged: true
         volumeMounts:
