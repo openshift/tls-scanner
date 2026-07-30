@@ -172,6 +172,13 @@ type ScanJob struct {
 	Port      int
 	Pod       k8s.PodInfo
 	Component *k8s.OpenshiftComponent
+	// SNIHostname, when non-empty, overrides the TLS SNI servername sent to
+	// this target. The connection is still made to IP:Port; testssl.sh is
+	// instructed to use SNIHostname as the servername via --ip=IP. This is
+	// for cases where a target must be reached by IP (e.g. an in-cluster pod
+	// IP) but the service in front of it (e.g. an Envoy/Gateway API listener)
+	// routes by SNI and rejects handshakes without the expected hostname.
+	SNIHostname string
 }
 
 type SkippedPort struct {

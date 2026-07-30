@@ -44,7 +44,7 @@ func (d DiscoveryResults) SkippedPorts() []SkippedPort {
 	return out
 }
 
-func DiscoverTargets(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client) DiscoveryResults {
+func DiscoverTargets(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client, sniHostname string) DiscoveryResults {
 	defer timing.Timings.Track("discoverTargets", "")()
 
 	discoveryWorkers := max(2, concurrentScans/2)
@@ -205,7 +205,7 @@ func DiscoverTargets(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client
 
 						progress.PortQueued()
 						mu.Lock()
-						scanJobs = append(scanJobs, ScanJob{IP: ip, Port: port, Pod: pod, Component: component})
+						scanJobs = append(scanJobs, ScanJob{IP: ip, Port: port, Pod: pod, Component: component, SNIHostname: sniHostname})
 						mu.Unlock()
 					}
 				}
@@ -229,7 +229,7 @@ func DiscoverTargets(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client
 	return DiscoveryResults{ScanJobs: scanJobs, Skipped: skipped}
 }
 
-func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client, policy *ComponentPolicy, timeouts ScanTimeouts, tlsProfileOverride *k8s.TLSSecurityProfile, starttlsPorts StarttlsPorts) ScanResults {
+func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client, policy *ComponentPolicy, timeouts ScanTimeouts, tlsProfileOverride *k8s.TLSSecurityProfile, starttlsPorts StarttlsPorts, sniHostname string) ScanResults {
 	defer timing.Timings.Track("performClusterScan", "")()
 	startTime := time.Now()
 
@@ -262,7 +262,7 @@ MAX_PARALLEL (testssl): %d
 		}
 	}
 
-	discovery := DiscoverTargets(pods, concurrentScans, client)
+	discovery := DiscoverTargets(pods, concurrentScans, client, sniHostname)
 
 	batchResults := batchScan(discovery.ScanJobs, concurrentScans, client, tlsConfig, policy, timeouts, starttlsPorts)
 
@@ -363,7 +363,7 @@ func scanBatchGroup(jobs []ScanJob, concurrentScans int, starttls string, client
 	for _, job := range jobs {
 		key := targetKey(job.IP, strconv.Itoa(job.Port))
 		jobIndex[key] = job
-		targets = append(targets, key)
+		targets = append(targets, targetLine(job))
 	}
 
 	targetsFile, err := writeTargetsFile(targets)
@@ -698,6 +698,20 @@ func writeTargetsFile(targets []string) (string, error) {
 
 func targetKey(host, port string) string {
 	return net.JoinHostPort(normalizeTargetHost(host), port)
+}
+
+// targetLine builds the string written to testssl.sh's --file batch input for
+// job. Each line of that file is passed through as additional testssl.sh
+// arguments (see run_mass_testing/create_mass_testing_cmdline upstream), so a
+// line may carry flags in addition to the host:port target. When
+// job.SNIHostname is set, the line connects to job.IP via --ip= while sending
+// SNIHostname as the TLS servername, instead of sending job.IP as SNI.
+func targetLine(job ScanJob) string {
+	key := targetKey(job.IP, strconv.Itoa(job.Port))
+	if job.SNIHostname == "" {
+		return key
+	}
+	return fmt.Sprintf("--ip=%s %s", normalizeTargetHost(job.IP), targetKey(job.SNIHostname, strconv.Itoa(job.Port)))
 }
 
 func normalizeTargetHost(host string) string {

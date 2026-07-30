@@ -57,9 +57,9 @@ func TestBatchScanStarttlsRouting(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		ip            string
-		wantSTARTTLS  string
-		wantPort      int
+		ip           string
+		wantSTARTTLS string
+		wantPort     int
 	}{
 		{"10.0.0.1", "", 443},
 		{"10.0.0.2", "postgres", 5432},
@@ -80,6 +80,75 @@ func TestBatchScanStarttlsRouting(t *testing.T) {
 		if r.result.Status != StatusOK {
 			t.Errorf("%s: Status = %s, want OK", tc.ip, r.result.Status)
 		}
+	}
+}
+
+func TestTargetLine(t *testing.T) {
+	tests := []struct {
+		name string
+		job  ScanJob
+		want string
+	}{
+		{
+			name: "no SNI override",
+			job:  ScanJob{IP: "10.0.0.1", Port: 443},
+			want: "10.0.0.1:443",
+		},
+		{
+			name: "SNI override connects via --ip and sends hostname as servername",
+			job:  ScanJob{IP: "10.0.0.1", Port: 443, SNIHostname: "gateway.example.com"},
+			want: "--ip=10.0.0.1 gateway.example.com:443",
+		},
+		{
+			name: "SNI override with IPv6 target",
+			job:  ScanJob{IP: "fd2e:6f44:5dd8:c956::16", Port: 8443, SNIHostname: "gateway.example.com"},
+			want: "--ip=fd2e:6f44:5dd8:c956::16 gateway.example.com:8443",
+		},
+		{
+			name: "IPv6 target without SNI override",
+			job:  ScanJob{IP: "fd2e:6f44:5dd8:c956::16", Port: 8443},
+			want: "[fd2e:6f44:5dd8:c956::16]:8443",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := targetLine(tt.job); got != tt.want {
+				t.Errorf("targetLine() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScanWithSNIHostnameOverride(t *testing.T) {
+	testutil.InstallMockTestSSL(t)
+
+	// The pod is only reachable at its cluster IP, but the service in front
+	// of it (e.g. an Envoy/Gateway API listener) routes by SNI, so the scan
+	// must present the expected hostname while still connecting to the IP.
+	jobs := []ScanJob{{IP: "10.0.0.5", Port: 443, SNIHostname: "gateway.example.com"}}
+	results := Scan(jobs, 1, nil, nil, testPolicy(t), DefaultScanTimeouts, nil)
+
+	if results.ScannedIPs != 1 {
+		t.Fatalf("expected 1 scanned IP, got %d", results.ScannedIPs)
+	}
+	if len(results.IPResults) != 1 {
+		t.Fatalf("expected 1 IP result, got %d", len(results.IPResults))
+	}
+
+	ir := results.IPResults[0]
+	if ir.IP != "10.0.0.5" {
+		t.Errorf("expected result attributed to connect IP 10.0.0.5, got %s", ir.IP)
+	}
+	if len(ir.PortResults) == 0 {
+		t.Fatalf("IP %s: no port results", ir.IP)
+	}
+	pr := ir.PortResults[0]
+	if pr.Status != StatusOK {
+		t.Errorf("expected status OK, got %s (%s)", pr.Status, pr.Reason)
+	}
+	if len(pr.TlsVersions) == 0 {
+		t.Errorf("expected TLS versions to be populated")
 	}
 }
 
@@ -147,7 +216,7 @@ func TestPerformClusterScanWithMockPods(t *testing.T) {
 		makePod("no-ports", "openshift-console", "10.128.0.30"),
 	}
 
-	results := PerformClusterScan(pods, 2, nil, testPolicy(t), DefaultScanTimeouts, nil, nil)
+	results := PerformClusterScan(pods, 2, nil, testPolicy(t), DefaultScanTimeouts, nil, nil, "")
 
 	if results.ScannedIPs != 3 {
 		t.Errorf("expected 3 scanned IPs (including no-ports), got %d", results.ScannedIPs)

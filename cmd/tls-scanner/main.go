@@ -76,6 +76,7 @@ func run(args []string) (exitCode int) {
 	connectTimeout := fs.Int("connect-timeout", scanner.DefaultScanTimeouts.ConnectTimeout, "Timeout in seconds for testssl.sh connect and openssl operations")
 	tlsProfileType := fs.String("tls-profile-type", "", "Expected cluster TLS profile type for compliance checks (Old, Intermediate, Modern). When set, skips reading APIServer/cluster from the API.")
 	starttlsPortsFlag := fs.String("starttls-ports", "", "STARTTLS protocol-to-port mapping (e.g., postgres=5432:6432,mysql=3306)")
+	sniHostname := fs.String("sni-hostname", "", "Override the TLS SNI servername sent to every target. The connection is still made to each target's own IP; this only affects the handshake's servername. Use for services that route by SNI (e.g. Envoy/Gateway API) and reject handshakes without the expected hostname. Typically paired with --component-filter/--namespace-filter/--targets so only pods actually serving this hostname are scanned.")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -190,7 +191,7 @@ func run(args []string) (exitCode int) {
 				slog.Warn("skipping invalid target format", "target", t, "expected", "host:port")
 				continue
 			}
-			jobs = append(jobs, scanner.ScanJob{IP: hostValue, Port: portValue})
+			jobs = append(jobs, scanner.ScanJob{IP: hostValue, Port: portValue, SNIHostname: *sniHostname})
 		}
 
 		if len(jobs) == 0 {
@@ -224,6 +225,11 @@ func run(args []string) (exitCode int) {
 		if err != nil {
 			slog.Error("loading template", "error", err)
 			return 1
+		}
+		if *sniHostname != "" {
+			for i := range jobs {
+				jobs[i].SNIHostname = *sniHostname
+			}
 		}
 
 		scanResults := scanner.Scan(jobs, *concurrentScans, nil, tlsProfileOverride, policy, timeouts, starttlsPorts)
@@ -283,13 +289,13 @@ func run(args []string) (exitCode int) {
 	}
 
 	if len(pods) > 0 && *dryRun {
-		discovery := scanner.DiscoverTargets(pods, *concurrentScans, client)
+		discovery := scanner.DiscoverTargets(pods, *concurrentScans, client, *sniHostname)
 		output.PrintDryRunResults(discovery)
 		return 0
 	}
 
 	if len(pods) > 0 {
-		scanResults := scanner.PerformClusterScan(pods, *concurrentScans, client, policy, timeouts, tlsProfileOverride, starttlsPorts)
+		scanResults := scanner.PerformClusterScan(pods, *concurrentScans, client, policy, timeouts, tlsProfileOverride, starttlsPorts, *sniHostname)
 		finalScanResults = &scanResults
 
 		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
@@ -311,7 +317,7 @@ func run(args []string) (exitCode int) {
 		return 1
 	}
 
-	jobs := []scanner.ScanJob{{IP: normalizeHost(*host), Port: portNum}}
+	jobs := []scanner.ScanJob{{IP: normalizeHost(*host), Port: portNum, SNIHostname: *sniHostname}}
 
 	if *dryRun {
 		output.PrintDryRunTargets(jobs)

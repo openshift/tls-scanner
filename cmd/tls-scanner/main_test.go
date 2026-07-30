@@ -156,6 +156,43 @@ func TestSingleHostPathIPv6(t *testing.T) {
 	}
 }
 
+func TestTargetsPathWithSNIHostname(t *testing.T) {
+	testutil.InstallMockTestSSL(t)
+	outDir := t.TempDir()
+
+	code := run([]string{
+		"--targets", "10.0.0.5:443",
+		"--sni-hostname", "gateway.example.com",
+		"--json-file", "results.json",
+		"--artifact-dir", outDir,
+		"-j", "1",
+	})
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+
+	results := readJSONResults(t, outDir, "results.json")
+	if results.ScannedIPs != 1 {
+		t.Fatalf("expected 1 scanned IP, got %d", results.ScannedIPs)
+	}
+	if len(results.IPResults) == 0 {
+		t.Fatal("no IP results")
+	}
+
+	ir := results.IPResults[0]
+	// The result must be attributed to the connect IP, not the SNI hostname
+	// used only for the handshake.
+	if ir.IP != "10.0.0.5" {
+		t.Fatalf("expected result attributed to connect IP 10.0.0.5, got %s", ir.IP)
+	}
+	if len(ir.PortResults) == 0 {
+		t.Fatal("no port results")
+	}
+	if ir.PortResults[0].Status != scanner.StatusOK {
+		t.Errorf("expected status OK, got %s", ir.PortResults[0].Status)
+	}
+}
+
 func TestPQCCheckTargets(t *testing.T) {
 	testutil.InstallMockTestSSL(t)
 	outDir := t.TempDir()

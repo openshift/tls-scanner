@@ -11,6 +11,15 @@ import (
 // It reads a targets file and writes a JSON array of findings.
 // Set MOCK_NO_MLKEM=1 in the environment to suppress ML-KEM findings,
 // simulating a host that does not support post-quantum key exchange.
+//
+// Each line of the targets file is normally a bare "host:port" target, but
+// may instead start with "--ip=<ip> " followed by "hostname:port" (see
+// scanner.targetLine), mirroring how testssl.sh lets a caller connect to an
+// explicit IP while sending a different TLS SNI servername. Real testssl.sh
+// reports such targets as "ip": "<connect-ip>/<node>" in its JSON output; the
+// mock reproduces that so tests can verify results are still attributed to
+// the connect IP (see scanner.GroupTestSSLOutputByIPPort, which keys results
+// on the ip portion before the "/").
 const MockTestSSLScript = `#!/bin/bash
 JSONFILE=""
 TARGETS_FILE=""
@@ -29,14 +38,22 @@ SERVICE="https"
 printf '['
 FIRST=true
 while IFS= read -r target; do
-    ip="${target%%:*}"
-    port="${target##*:}"
+    ip=""
+    node_port="$target"
+    if [[ "$target" == --ip=* ]]; then
+        ip="${target%% *}"
+        ip="${ip#--ip=}"
+        node_port="${target#* }"
+    fi
+    node="${node_port%%:*}"
+    port="${node_port##*:}"
+    [ -z "$ip" ] && ip="$node"
     [ "$FIRST" = true ] && FIRST=false || printf ','
-    printf '{"id":"TLS1_2","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"},' "$ip" "$ip" "$port" "$SERVICE"
-    printf '{"id":"TLS1_3","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"},' "$ip" "$ip" "$port" "$SERVICE"
-    printf '{"id":"FS","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"}' "$ip" "$ip" "$port" "$SERVICE"
+    printf '{"id":"TLS1_2","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"},' "$ip" "$node" "$port" "$SERVICE"
+    printf '{"id":"TLS1_3","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"},' "$ip" "$node" "$port" "$SERVICE"
+    printf '{"id":"FS","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"}' "$ip" "$node" "$port" "$SERVICE"
     if [ -z "${MOCK_NO_MLKEM:-}" ]; then
-        printf ',{"id":"FS_KEMs","ip":"%s/%s","port":"%s","severity":"OK","finding":"x25519mlkem768","service":"%s"}' "$ip" "$ip" "$port" "$SERVICE"
+        printf ',{"id":"FS_KEMs","ip":"%s/%s","port":"%s","severity":"OK","finding":"x25519mlkem768","service":"%s"}' "$ip" "$node" "$port" "$SERVICE"
     fi
 done < "$TARGETS_FILE"
 printf ']'
