@@ -222,7 +222,28 @@ EOF
     SCANNER_MEM_LIMIT="${SCANNER_MEM_LIMIT:-${SCANNER_MEM:-4Gi}}"
     SCANNER_PARALLEL="${SCANNER_PARALLEL:-4}"
     ARTIFACT_WAIT="${ARTIFACT_WAIT:-30}"
-    sed -e "s|\\\${SCANNER_IMAGE}|${SCANNER_IMAGE}|g" -e "s|\\\${NAMESPACE}|${NAMESPACE}|g" -e "s|\\\${JOB_NAME}|${JOB_NAME}|g" -e "s|\\\${NAMESPACE_FILTER_ARG}|${NAMESPACE_FILTER_ARG}|g" -e "s|\\\${LIMIT_IPS_ARG}|${LIMIT_IPS_ARG}|g" -e "s|\\\${STARTTLS_PORTS_ARG}|${STARTTLS_PORTS_ARG}|g" -e "s|\\\${SCANNER_CPU_REQUEST:-500m}|${SCANNER_CPU_REQUEST}|g" -e "s|\\\${SCANNER_CPU_LIMIT:-4}|${SCANNER_CPU_LIMIT}|g" -e "s|\\\${SCANNER_MEM_REQUEST:-4Gi}|${SCANNER_MEM_REQUEST}|g" -e "s|\\\${SCANNER_MEM_LIMIT:-4Gi}|${SCANNER_MEM_LIMIT}|g" -e "s|\\\${SCANNER_PARALLEL:-4}|${SCANNER_PARALLEL}|g" -e "s|\\\${ARTIFACT_WAIT:-300}|${ARTIFACT_WAIT}|g" "$JOB_TEMPLATE" | oc apply -f -
+
+    # Render to a temp file first (rather than piping straight into `oc apply`)
+    # so we can server-side dry-run it and catch template/resource mistakes
+    # (e.g. inconsistent SCANNER_*_REQUEST/LIMIT values) before actually
+    # applying anything.
+    RENDERED_JOB=$(mktemp)
+    check_error "Creating temp file for rendered Job manifest"
+    # Use an EXIT trap (rather than RETURN) so the temp file is still cleaned
+    # up if we exit early below (e.g. on a failed dry-run), not just on a
+    # normal function return.
+    trap 'rm -f "$RENDERED_JOB"' EXIT
+
+    sed -e "s|\\\${SCANNER_IMAGE}|${SCANNER_IMAGE}|g" -e "s|\\\${NAMESPACE}|${NAMESPACE}|g" -e "s|\\\${JOB_NAME}|${JOB_NAME}|g" -e "s|\\\${NAMESPACE_FILTER_ARG}|${NAMESPACE_FILTER_ARG}|g" -e "s|\\\${LIMIT_IPS_ARG}|${LIMIT_IPS_ARG}|g" -e "s|\\\${STARTTLS_PORTS_ARG}|${STARTTLS_PORTS_ARG}|g" -e "s|\\\${SCANNER_CPU_REQUEST:-500m}|${SCANNER_CPU_REQUEST}|g" -e "s|\\\${SCANNER_CPU_LIMIT:-4}|${SCANNER_CPU_LIMIT}|g" -e "s|\\\${SCANNER_MEM_REQUEST:-4Gi}|${SCANNER_MEM_REQUEST}|g" -e "s|\\\${SCANNER_MEM_LIMIT:-4Gi}|${SCANNER_MEM_LIMIT}|g" -e "s|\\\${SCANNER_PARALLEL:-4}|${SCANNER_PARALLEL}|g" -e "s|\\\${ARTIFACT_WAIT:-300}|${ARTIFACT_WAIT}|g" "$JOB_TEMPLATE" > "$RENDERED_JOB"
+    check_error "Rendering Job manifest"
+
+    echo "--> Validating rendered Job manifest (server-side dry-run)..."
+    if ! oc apply --dry-run=server -f "$RENDERED_JOB"; then
+        echo "Error: Invalid Job manifest (check SCANNER_*_REQUEST/LIMIT values)"
+        exit 1
+    fi
+
+    oc apply -f "$RENDERED_JOB"
     check_error "Applying Job manifest"
 
     echo "--> Scanner Job '${JOB_NAME}' deployed."
