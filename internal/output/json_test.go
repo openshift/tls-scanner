@@ -63,7 +63,7 @@ func TestWriteOutputFilesNoop(t *testing.T) {
 	t.Parallel()
 
 	results := testScanResults()
-	if err := WriteOutputFiles(results, t.TempDir(), "", "", "", false); err != nil {
+	if err := WriteOutputFiles(results, t.TempDir(), "", "", "", "", false, nil); err != nil {
 		t.Fatalf("expected nil for empty filenames, got: %v", err)
 	}
 }
@@ -73,7 +73,7 @@ func TestWriteOutputFilesJSON(t *testing.T) {
 
 	dir := t.TempDir()
 	results := testScanResults()
-	if err := WriteOutputFiles(results, dir, "out.json", "", "", false); err != nil {
+	if err := WriteOutputFiles(results, dir, "out.json", "", "", "", false, nil); err != nil {
 		t.Fatalf("WriteOutputFiles returned error: %v", err)
 	}
 
@@ -90,7 +90,7 @@ func TestWriteOutputFilesAbsolutePath(t *testing.T) {
 	artifactDir := filepath.Join(dir, "artifacts")
 	absPath := filepath.Join(dir, "absolute.json")
 	results := testScanResults()
-	if err := WriteOutputFiles(results, artifactDir, absPath, "", "", false); err != nil {
+	if err := WriteOutputFiles(results, artifactDir, absPath, "", "", "", false, nil); err != nil {
 		t.Fatalf("WriteOutputFiles returned error: %v", err)
 	}
 
@@ -104,7 +104,7 @@ func TestWriteOutputFilesCSV(t *testing.T) {
 
 	dir := t.TempDir()
 	results := testScanResults()
-	if err := WriteOutputFiles(results, dir, "", "out.csv", "", false); err != nil {
+	if err := WriteOutputFiles(results, dir, "", "out.csv", "", "", false, nil); err != nil {
 		t.Fatalf("WriteOutputFiles returned error: %v", err)
 	}
 
@@ -119,7 +119,7 @@ func TestWriteOutputFilesJUnit(t *testing.T) {
 
 	dir := t.TempDir()
 	results := testScanResults()
-	if err := WriteOutputFiles(results, dir, "", "", "out.xml", false); err != nil {
+	if err := WriteOutputFiles(results, dir, "", "", "out.xml", "", false, nil); err != nil {
 		t.Fatalf("WriteOutputFiles returned error: %v", err)
 	}
 
