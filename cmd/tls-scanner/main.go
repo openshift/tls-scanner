@@ -62,6 +62,7 @@ func run(args []string) (exitCode int) {
 	allPods := fs.Bool("all-pods", false, "Scan all pods in the cluster (overrides --host)")
 	componentFilter := fs.String("component-filter", "", "Filter pods by a comma-separated list of component names (only used with --all-pods)")
 	namespaceFilter := fs.String("namespace-filter", "", "Filter pods by a comma-separated list of namespaces (only used with --all-pods)")
+	excludeLabels := fs.String("exclude-labels", "", "Exclude pods matching a comma-separated list of label selectors, e.g. 'olm.catalogSource' or 'app=catalog,tier=frontend' (only used with --all-pods). A pod is excluded when ALL selectors match (AND semantics).")
 	targets := fs.String("targets", "", "A comma-separated list of host:port targets to scan")
 	templateFile := fs.String("template", "", "Path to a YAML file listing hosts and ports to scan (see --generate-template)")
 	generateTemplate := fs.String("generate-template", "", "Write a sample targets YAML template to this path and exit")
@@ -256,6 +257,7 @@ func run(args []string) (exitCode int) {
 		}
 		pods = client.FilterPodsByComponent(pods, *componentFilter)
 		pods = k8s.FilterPodsByNamespace(pods, *namespaceFilter)
+		pods = k8s.FilterPodsByExcludeLabels(pods, *excludeLabels)
 
 		if len(pods) == 0 {
 			slog.Warn("no pods found matching the given filters, nothing to scan")

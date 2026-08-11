@@ -175,3 +175,67 @@ func FilterPodsByNamespace(pods []PodInfo, namespaceFilter string) []PodInfo {
 	slog.Info("filtered pods by namespace", "remaining", len(filtered), "total", len(pods))
 	return filtered
 }
+
+// FilterPodsByExcludeLabels removes pods whose labels match ALL of the
+// specified selectors. The excludeLabels string is a comma-separated list of
+// key=value pairs; a key without a value (e.g. "olm.catalogSource") matches
+// any pod that has that label regardless of its value.
+func FilterPodsByExcludeLabels(pods []PodInfo, excludeLabels string) []PodInfo {
+	if excludeLabels == "" {
+		return pods
+	}
+
+	slog.Info("filtering out pods by label selector", "excludeLabels", excludeLabels)
+
+	type labelSelector struct {
+		key   string
+		value string // empty means key-only match
+		hasValue bool
+	}
+
+	var selectors []labelSelector
+	for _, entry := range strings.Split(excludeLabels, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if idx := strings.IndexByte(entry, '='); idx >= 0 {
+			selectors = append(selectors, labelSelector{key: entry[:idx], value: entry[idx+1:], hasValue: true})
+		} else {
+			selectors = append(selectors, labelSelector{key: entry})
+		}
+	}
+
+	if len(selectors) == 0 {
+		return pods
+	}
+
+	var filtered []PodInfo
+	for _, pod := range pods {
+		var labels map[string]string
+		if pod.Pod != nil {
+			labels = pod.Pod.Labels
+		}
+
+		exclude := true
+		for _, sel := range selectors {
+			v, ok := labels[sel.key]
+			if !ok {
+				exclude = false
+				break
+			}
+			if sel.hasValue && v != sel.value {
+				exclude = false
+				break
+			}
+		}
+		if exclude {
+			slog.Debug("excluding pod by label selector", "namespace", pod.Namespace, "pod", pod.Name, "excludeLabels", excludeLabels)
+			continue
+		}
+		filtered = append(filtered, pod)
+	}
+
+	slog.Info("filtered out pods by label selector", "remaining", len(filtered), "total", len(pods))
+	return filtered
+}
