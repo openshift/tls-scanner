@@ -394,7 +394,8 @@ func scanBatchGroup(jobs []ScanJob, concurrentScans int, starttls string, client
 	defer cancel()
 
 	connectTimeoutStr := strconv.Itoa(timeouts.ConnectTimeout)
-	args := []string{"-p", "-s", "-f", "-E",
+	// -S (server defaults) is needed for cert_signatureAlgorithm findings.
+	args := []string{"-p", "-s", "-f", "-E", "-S",
 		"--connect-timeout", connectTimeoutStr,
 		"--openssl-timeout", connectTimeoutStr,
 		"--file", targetsFile,
@@ -458,6 +459,7 @@ func scanBatchGroup(jobs []ScanJob, concurrentScans int, starttls string, client
 		portResult.TlsVersions = ExtractTLSInfo(scanResult)
 		portResult.TlsCiphers = ExtractCiphersFromTestSSL(portData)
 		portResult.TlsKeyExchange = ExtractKeyExchangeFromTestSSL(portData)
+		portResult.TlsCertSignatureAlgorithms = ExtractCertSignatureAlgorithmsFromTestSSL(portData)
 
 		PopulatePQCFields(&portResult)
 

@@ -36,15 +36,16 @@ func TestWriteCSVOutput(t *testing.T) {
 				MaintainerComponent: "networking",
 			},
 			PortResults: []scanner.PortResult{{
-				Port:          443,
-				Protocol:      "tcp",
-				Service:       "https",
-				ProcessName:   "nginx",
-				TlsCiphers:    []string{"TLS_AES_128_GCM_SHA256"},
-				TlsVersions:   []string{"TLSv1.3"},
-				Status:        scanner.StatusOK,
-				Reason:        "TLS scan successful",
-				ListenAddress: "0.0.0.0",
+				Port:                       443,
+				Protocol:                   "tcp",
+				Service:                    "https",
+				ProcessName:                "nginx",
+				TlsCiphers:                 []string{"TLS_AES_128_GCM_SHA256"},
+				TlsVersions:                []string{"TLSv1.3"},
+				TlsCertSignatureAlgorithms: []string{"SHA256 with RSA"},
+				Status:                     scanner.StatusOK,
+				Reason:                     "TLS scan successful",
+				ListenAddress:              "0.0.0.0",
 				TlsKeyExchange: &scanner.KeyExchangeInfo{
 					Groups: []string{"x25519"},
 					ForwardSecrecy: &scanner.ForwardSecrecy{
@@ -86,11 +87,23 @@ func TestWriteCSVOutput(t *testing.T) {
 	if !reflect.DeepEqual(rows[0], csvColumns) {
 		t.Fatalf("unexpected csv header: %#v", rows[0])
 	}
-	if rows[1][0] != "10.0.0.1" || rows[1][1] != "443" {
+	col := func(name string) string {
+		for i, c := range csvColumns {
+			if c == name {
+				return rows[1][i]
+			}
+		}
+		t.Fatalf("column %q not found in header", name)
+		return ""
+	}
+	if col("IP") != "10.0.0.1" || col("Port") != "443" {
 		t.Fatalf("unexpected ip/port values: %#v", rows[1][:2])
 	}
-	if rows[1][16] != "Yes" || rows[1][17] != "Yes" {
-		t.Fatalf("unexpected yes/no formatting for TLS13/ML-KEM: %q %q", rows[1][16], rows[1][17])
+	if col("TLS 1.3 Supported") != "Yes" || col("ML-KEM Supported") != "Yes" {
+		t.Fatalf("unexpected yes/no formatting for TLS13/ML-KEM: %q %q", col("TLS 1.3 Supported"), col("ML-KEM Supported"))
+	}
+	if col("Cert Signature Algorithms") != "SHA256 with RSA" {
+		t.Fatalf("unexpected cert signature algorithms value: %q", col("Cert Signature Algorithms"))
 	}
 }
 
