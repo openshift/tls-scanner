@@ -34,7 +34,8 @@ while IFS= read -r target; do
     [ "$FIRST" = true ] && FIRST=false || printf ','
     printf '{"id":"TLS1_2","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"},' "$ip" "$ip" "$port" "$SERVICE"
     printf '{"id":"TLS1_3","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"},' "$ip" "$ip" "$port" "$SERVICE"
-    printf '{"id":"FS","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"}' "$ip" "$ip" "$port" "$SERVICE"
+    printf '{"id":"FS","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"},' "$ip" "$ip" "$port" "$SERVICE"
+    printf '{"id":"cert_signatureAlgorithm","ip":"%s/%s","port":"%s","severity":"OK","finding":"SHA256 with RSA","service":"%s"}' "$ip" "$ip" "$port" "$SERVICE"
     if [ -z "${MOCK_NO_MLKEM:-}" ]; then
         printf ',{"id":"FS_KEMs","ip":"%s/%s","port":"%s","severity":"OK","finding":"x25519mlkem768","service":"%s"}' "$ip" "$ip" "$port" "$SERVICE"
     fi
