@@ -395,7 +395,11 @@ func scanBatchGroup(jobs []ScanJob, concurrentScans int, starttls string, client
 
 	connectTimeoutStr := strconv.Itoa(timeouts.ConnectTimeout)
 	// -S (server defaults) is needed for cert_signatureAlgorithm findings.
-	args := []string{"-p", "-s", "-f", "-E", "-S",
+	// -6 is needed for IPv6 targets: testssl.sh defaults HAS_IPv6 to false and
+	// aborts an IPv6-only target with "Only IPv6 address(es) ... maybe add -6".
+	// Targets are literal pod IPs, and for an IPv4 literal the flag is inert
+	// (it only widens the address set when an AAAA record also exists).
+	args := []string{"-p", "-s", "-f", "-E", "-S", "-6",
 		"--connect-timeout", connectTimeoutStr,
 		"--openssl-timeout", connectTimeoutStr,
 		"--file", targetsFile,
