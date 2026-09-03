@@ -1,0 +1,42 @@
+# Apply to the Konflux cluster: oc apply -f component.yaml
+# Not watched by Konflux from git -- see konflux/README.md.
+#
+# The `configure-pac` annotation makes Konflux open a separate PR against this repo with
+# generated .tekton/tls-scanner-pull-request.yaml and .tekton/tls-scanner-push.yaml build
+# PipelineRuns. Do not hand-write those files here.
+#
+# dockerfileUrl points at Dockerfile.local (public golang + UBI9 bases) so Konflux can
+# build without registry.ci.openshift.org credentials. The CI Dockerfile remains for
+# openshift/release image builds.
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  name: tls-scanner
+  namespace: ocp-isc-tenant
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac
+    git-provider: github
+spec:
+  application: tls-scanner
+  componentName: tls-scanner
+  source:
+    git:
+      url: https://github.com/openshift/tls-scanner.git
+      revision: main
+      dockerfileUrl: Dockerfile.local
+---
+# Provisions a Quay repo and sets Component.spec.containerImage automatically.
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ImageRepository
+metadata:
+  name: tls-scanner
+  namespace: ocp-isc-tenant
+  annotations:
+    image-controller.appstudio.redhat.com/update-component-image: "true"
+  labels:
+    appstudio.redhat.com/application: tls-scanner
+    appstudio.redhat.com/component: tls-scanner
+spec:
+  image:
+    name: ocp-isc-tenant/tls-scanner
+    visibility: public
