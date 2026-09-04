@@ -420,6 +420,38 @@ func ExtractCiphersFromTestSSL(jsonData []byte) []string {
 	return ciphers
 }
 
+// ExtractCertSignatureAlgorithmsFromTestSSL extracts certificate signature
+// algorithms from testssl.sh cert_signatureAlgorithm findings (emitted by the
+// server-defaults check, -S). A host serving multiple certificates reports one
+// finding per certificate, with ids like "cert_signatureAlgorithm <hostCert#1>",
+// so matching is done on the id prefix. Values look like "SHA256 with RSA" or
+// "SHA256 with ECDSA".
+func ExtractCertSignatureAlgorithmsFromTestSSL(jsonData []byte) []string {
+	var rawData []map[string]interface{}
+	if err := json.Unmarshal(jsonData, &rawData); err != nil {
+		slog.Error("parsing testssl.sh JSON for cert signature algorithms", "error", err)
+		return nil
+	}
+
+	var algorithms []string
+	for _, finding := range rawData {
+		id, _ := finding["id"].(string)
+		if !strings.HasPrefix(id, "cert_signatureAlgorithm") {
+			continue
+		}
+		value, _ := finding["finding"].(string)
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if !slices.Contains(algorithms, value) {
+			algorithms = append(algorithms, value)
+		}
+	}
+
+	return algorithms
+}
+
 func ExtractTLSInfo(scanRun ScanRun) []string {
 	var tlsVersions []string
 
