@@ -210,6 +210,13 @@ func TestCheckCompliance(t *testing.T) {
 			checkIngress:  false,
 		},
 		{
+			name:          "Exempt component: no result populated even with a strict profile",
+			tlsVersions:   []string{"TLSv1.2", "TLSv1.3"},
+			ciphers:       []string{"TLS_AKE_WITH_AES_256_GCM_SHA384"},
+			profile:       modernProfile(),
+			componentType: ExemptComponent,
+		},
+		{
 			name:          "Kubelet component: uses KubeletConfig profile",
 			tlsVersions:   []string{"TLSv1.2"},
 			ciphers:       []string{"TLS_AKE_WITH_AES_256_GCM_SHA384", "TLS_AKE_WITH_AES_128_GCM_SHA256"},

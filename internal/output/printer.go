@@ -72,6 +72,9 @@ func PrintClusterResults(results scanner.ScanResults) {
 					fmt.Printf("      %s\n", cipher)
 				}
 			}
+			if len(portResult.TlsCertSignatureAlgorithms) > 0 {
+				fmt.Printf("    Cert Signature Algorithms: %s\n", strings.Join(portResult.TlsCertSignatureAlgorithms, ", "))
+			}
 			fmt.Printf("\n")
 		}
 	}

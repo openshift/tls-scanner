@@ -153,6 +153,13 @@ func TestPolicyResolve(t *testing.T) {
 			want:      GenericComponent,
 		},
 		{
+			name:      "namespace match → exempt",
+			rules:     []PolicyRule{{Namespace: "openshift-e2e-loki", Profile: ProfileExempt}},
+			namespace: "openshift-e2e-loki",
+			port:      9001,
+			want:      ExemptComponent,
+		},
+		{
 			name:  "port match → kubelet",
 			rules: []PolicyRule{{Port: intPtr(10250), Profile: ProfileKubelet}},
 			port:  10250,
@@ -300,6 +307,16 @@ func TestPolicyBehaviour(t *testing.T) {
 			process:   "kube-apiserver",
 			port:      6443,
 			want:      GenericComponent,
+		},
+		{
+			// CI-only log forwarding injected by the openshift/release
+			// ipi-install-hosted-loki step; its oauth-proxy listener has no
+			// TLS configuration flags and is not a product component.
+			name:      "CI hosted-loki oauth-proxy is exempt",
+			namespace: "openshift-e2e-loki",
+			process:   "oauth-proxy",
+			port:      9001,
+			want:      ExemptComponent,
 		},
 	}
 
