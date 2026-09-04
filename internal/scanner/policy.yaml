@@ -7,6 +7,10 @@
 #   apiserver  - cluster-wide APIServer TLS profile (default for all components)
 #   ingress    - IngressController TLS profile (falls back to APIServer if no override is set)
 #   kubelet    - KubeletConfig TLS profile    (falls back to APIServer if no override is set)
+#   exempt     - no compliance check; the port is scanned and reported but never
+#                fails. Reserve for endpoints that are not part of the product
+#                and have no mechanism to honor the cluster TLS profile. Every
+#                exempt rule must carry a comment justifying the exemption.
 #
 # Matching fields (all optional; omitting a field matches any value):
 #   namespace:  Kubernetes pod namespace       (Go regex, anchored)
@@ -23,6 +27,13 @@
 #     process: my-server
 #     profile: apiserver
 rules:
+  # openshift-e2e-loki holds CI-only log forwarding (promtail + oauth-proxy)
+  # injected into ephemeral test clusters by the openshift/release
+  # ipi-install-hosted-loki step. It is never deployed on customer clusters,
+  # and its oauth-proxy TLS listener (:9001) has no TLS version/cipher
+  # configuration flags, so it cannot honor the cluster TLS profile.
+  - namespace: openshift-e2e-loki
+    profile: exempt
   - namespace: openshift-ingress
     profile: ingress
   - process: kubelet

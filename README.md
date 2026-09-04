@@ -1,6 +1,6 @@
 # tls-scanner
 
-A TLS compliance scanner for OpenShift/Kubernetes clusters. Uses [testssl.sh](https://testssl.sh/) to enumerate TLS versions, cipher suites, and key exchange groups across cluster pods, with post-quantum (ML-KEM) readiness checks.
+A TLS compliance scanner for OpenShift/Kubernetes clusters. Uses [testssl.sh](https://testssl.sh/) to enumerate TLS versions, cipher suites, key exchange groups, and certificate signature algorithms across cluster pods, with post-quantum (ML-KEM) readiness checks.
 
 ## Prerequisites
 

@@ -57,9 +57,9 @@ func TestBatchScanStarttlsRouting(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		ip            string
-		wantSTARTTLS  string
-		wantPort      int
+		ip           string
+		wantSTARTTLS string
+		wantPort     int
 	}{
 		{"10.0.0.1", "", 443},
 		{"10.0.0.2", "postgres", 5432},
@@ -599,6 +599,49 @@ func TestExtractCiphersFromTestSSLInvalidJSON(t *testing.T) {
 	ciphers := ExtractCiphersFromTestSSL([]byte("{bad-json"))
 	if ciphers != nil {
 		t.Fatalf("expected nil for invalid JSON, got %#v", ciphers)
+	}
+}
+
+func TestExtractCertSignatureAlgorithmsFromTestSSL(t *testing.T) {
+	t.Parallel()
+
+	raw := []map[string]any{
+		{"id": "TLS1_3", "finding": "offered (OK)", "severity": "OK"},
+		{"id": "cert_signatureAlgorithm", "finding": "SHA256 with RSA", "severity": "OK"},
+		{"id": "cert_signatureAlgorithm <hostCert#1>", "finding": "SHA256 with RSA", "severity": "OK"},
+		{"id": "cert_signatureAlgorithm <hostCert#2>", "finding": "SHA256 with ECDSA", "severity": "OK"},
+		{"id": "cert_keySize", "finding": "RSA 2048 bits", "severity": "OK"},
+	}
+	b, _ := json.Marshal(raw)
+	algs := ExtractCertSignatureAlgorithmsFromTestSSL(b)
+
+	if len(algs) != 2 {
+		t.Fatalf("expected 2 unique signature algorithms, got %d: %#v", len(algs), algs)
+	}
+	for _, e := range []string{"SHA256 with RSA", "SHA256 with ECDSA"} {
+		if !slices.Contains(algs, e) {
+			t.Fatalf("expected algorithm %q in result, got %#v", e, algs)
+		}
+	}
+}
+
+func TestExtractCertSignatureAlgorithmsFromTestSSLEmpty(t *testing.T) {
+	t.Parallel()
+
+	raw := []map[string]any{
+		{"id": "TLS1_3", "finding": "offered (OK)", "severity": "OK"},
+		{"id": "FS", "finding": "offered", "severity": "OK"},
+	}
+	b, _ := json.Marshal(raw)
+	if algs := ExtractCertSignatureAlgorithmsFromTestSSL(b); len(algs) != 0 {
+		t.Fatalf("expected no signature algorithms from non-cert findings, got %#v", algs)
+	}
+}
+
+func TestExtractCertSignatureAlgorithmsFromTestSSLInvalidJSON(t *testing.T) {
+	t.Parallel()
+	if algs := ExtractCertSignatureAlgorithmsFromTestSSL([]byte("{bad-json")); algs != nil {
+		t.Fatalf("expected nil for invalid JSON, got %#v", algs)
 	}
 }
 

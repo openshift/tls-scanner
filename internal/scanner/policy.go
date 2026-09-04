@@ -20,6 +20,12 @@ const (
 	ProfileAPIServer ProfileSource = "apiserver"
 	ProfileIngress   ProfileSource = "ingress"
 	ProfileKubelet   ProfileSource = "kubelet"
+	// ProfileExempt marks a component as exempt from TLS profile compliance.
+	// The port is still scanned and reported, but no compliance verdict is
+	// recorded, so it never fails the scan. Reserve this for endpoints that are
+	// not part of the product (e.g. CI-injected tooling) and have no mechanism
+	// to honor the cluster TLS profile.
+	ProfileExempt ProfileSource = "exempt"
 )
 
 // PolicyRule matches a scanned port by any combination of namespace, process
@@ -152,11 +158,11 @@ func (r *PolicyRule) description() string {
 // string, while "openshift-.*" matches any string with that prefix.
 func (r *PolicyRule) compile() error {
 	switch r.Profile {
-	case ProfileAPIServer, ProfileIngress, ProfileKubelet:
+	case ProfileAPIServer, ProfileIngress, ProfileKubelet, ProfileExempt:
 	case "":
-		return fmt.Errorf("profile must be set (valid values: apiserver, ingress, kubelet)")
+		return fmt.Errorf("profile must be set (valid values: apiserver, ingress, kubelet, exempt)")
 	default:
-		return fmt.Errorf("unknown profile %q (valid values: apiserver, ingress, kubelet)", r.Profile)
+		return fmt.Errorf("unknown profile %q (valid values: apiserver, ingress, kubelet, exempt)", r.Profile)
 	}
 
 	if r.Namespace == "" && r.Process == "" && r.Component == "" && r.Port == nil {
@@ -193,6 +199,8 @@ func (p *ComponentPolicy) Resolve(namespace, process, component string, port int
 				return IngressComponent
 			case ProfileKubelet:
 				return KubeletComponent
+			case ProfileExempt:
+				return ExemptComponent
 			default:
 				return GenericComponent
 			}
