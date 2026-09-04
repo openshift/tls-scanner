@@ -3,7 +3,7 @@ package k8s
 import (
 	"testing"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -155,43 +155,43 @@ func TestExtractComponentFromPod(t *testing.T) {
 	tests := []struct {
 		name      string
 		labels    map[string]string
-		container v1.Container
+		container corev1.Container
 		want      string
 	}{
 		{
 			name:      "app label",
 			labels:    map[string]string{"app": "my-app"},
-			container: v1.Container{Name: "ctr", Image: "quay.io/x/y:z"},
+			container: corev1.Container{Name: "ctr", Image: "quay.io/x/y:z"},
 			want:      "my-app",
 		},
 		{
 			name:      "component label",
 			labels:    map[string]string{"component": "my-component"},
-			container: v1.Container{Name: "ctr", Image: "quay.io/x/y:z"},
+			container: corev1.Container{Name: "ctr", Image: "quay.io/x/y:z"},
 			want:      "my-component",
 		},
 		{
 			name:      "app.kubernetes.io/name label",
 			labels:    map[string]string{"app.kubernetes.io/name": "k8s-app"},
-			container: v1.Container{Name: "ctr", Image: "quay.io/x/y:z"},
+			container: corev1.Container{Name: "ctr", Image: "quay.io/x/y:z"},
 			want:      "k8s-app",
 		},
 		{
 			name:      "app label takes precedence over component",
 			labels:    map[string]string{"app": "winner", "component": "loser"},
-			container: v1.Container{Name: "ctr"},
+			container: corev1.Container{Name: "ctr"},
 			want:      "winner",
 		},
 		{
 			name:      "falls back to container name",
 			labels:    map[string]string{},
-			container: v1.Container{Name: "my-container", Image: "nginx"},
+			container: corev1.Container{Name: "my-container", Image: "nginx"},
 			want:      "my-container",
 		},
 		{
 			name:      "falls back to image name",
 			labels:    map[string]string{},
-			container: v1.Container{Name: "", Image: "quay.io/org/my-image:v1"},
+			container: corev1.Container{Name: "", Image: "quay.io/org/my-image:v1"},
 			want:      "my-image",
 		},
 	}
@@ -199,7 +199,7 @@ func TestExtractComponentFromPod(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			pod := v1.Pod{
+			pod := corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Labels: tt.labels},
 			}
 			got := c.extractComponentFromPod(pod, tt.container)
@@ -229,7 +229,7 @@ func TestExtractMaintainerFromPod(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			pod := v1.Pod{
+			pod := corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: tt.namespace,
 					Labels:    tt.labels,

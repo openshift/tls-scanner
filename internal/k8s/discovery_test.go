@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -243,18 +243,18 @@ func TestDiscoverPortsFromPodSpec(t *testing.T) {
 
 	tests := []struct {
 		name string
-		pod  *v1.Pod
+		pod  *corev1.Pod
 		want []int
 	}{
 		{
 			name: "TCP ports from containers",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec: v1.PodSpec{Containers: []v1.Container{{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{
 					Name: "c",
-					Ports: []v1.ContainerPort{
-						{ContainerPort: 443, Protocol: v1.ProtocolTCP},
-						{ContainerPort: 8443, Protocol: v1.ProtocolTCP},
+					Ports: []corev1.ContainerPort{
+						{ContainerPort: 443, Protocol: corev1.ProtocolTCP},
+						{ContainerPort: 8443, Protocol: corev1.ProtocolTCP},
 					},
 				}}},
 			},
@@ -262,13 +262,13 @@ func TestDiscoverPortsFromPodSpec(t *testing.T) {
 		},
 		{
 			name: "UDP ports excluded",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec: v1.PodSpec{Containers: []v1.Container{{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{
 					Name: "c",
-					Ports: []v1.ContainerPort{
-						{ContainerPort: 443, Protocol: v1.ProtocolTCP},
-						{ContainerPort: 53, Protocol: v1.ProtocolUDP},
+					Ports: []corev1.ContainerPort{
+						{ContainerPort: 443, Protocol: corev1.ProtocolTCP},
+						{ContainerPort: 53, Protocol: corev1.ProtocolUDP},
 					},
 				}}},
 			},
@@ -276,16 +276,16 @@ func TestDiscoverPortsFromPodSpec(t *testing.T) {
 		},
 		{
 			name: "init container ports included",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
 						Name:  "main",
-						Ports: []v1.ContainerPort{{ContainerPort: 443, Protocol: v1.ProtocolTCP}},
+						Ports: []corev1.ContainerPort{{ContainerPort: 443, Protocol: corev1.ProtocolTCP}},
 					}},
-					InitContainers: []v1.Container{{
+					InitContainers: []corev1.Container{{
 						Name:  "init",
-						Ports: []v1.ContainerPort{{ContainerPort: 9090, Protocol: v1.ProtocolTCP}},
+						Ports: []corev1.ContainerPort{{ContainerPort: 9090, Protocol: corev1.ProtocolTCP}},
 					}},
 				},
 			},
@@ -293,19 +293,19 @@ func TestDiscoverPortsFromPodSpec(t *testing.T) {
 		},
 		{
 			name: "no ports",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec:       v1.PodSpec{Containers: []v1.Container{{Name: "c"}}},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "c"}}},
 			},
 			want: nil,
 		},
 		{
 			name: "multiple containers",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec: v1.PodSpec{Containers: []v1.Container{
-					{Name: "c1", Ports: []v1.ContainerPort{{ContainerPort: 443, Protocol: v1.ProtocolTCP}}},
-					{Name: "c2", Ports: []v1.ContainerPort{{ContainerPort: 8443, Protocol: v1.ProtocolTCP}}},
+				Spec: corev1.PodSpec{Containers: []corev1.Container{
+					{Name: "c1", Ports: []corev1.ContainerPort{{ContainerPort: 443, Protocol: corev1.ProtocolTCP}}},
+					{Name: "c2", Ports: []corev1.ContainerPort{{ContainerPort: 8443, Protocol: corev1.ProtocolTCP}}},
 				}},
 			},
 			want: []int{443, 8443},
@@ -333,15 +333,15 @@ func TestDiscoverPortsFromSecondaryContainers(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		pod           *v1.Pod
+		pod           *corev1.Pod
 		execContainer string
 		want          []int
 	}{
 		{
 			name: "single container returns nothing",
-			pod: &v1.Pod{
-				Spec: v1.PodSpec{Containers: []v1.Container{
-					{Name: "main", Ports: []v1.ContainerPort{{ContainerPort: 443, Protocol: v1.ProtocolTCP}}},
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{
+					{Name: "main", Ports: []corev1.ContainerPort{{ContainerPort: 443, Protocol: corev1.ProtocolTCP}}},
 				}},
 			},
 			execContainer: "main",
@@ -349,10 +349,10 @@ func TestDiscoverPortsFromSecondaryContainers(t *testing.T) {
 		},
 		{
 			name: "excludes exec container ports",
-			pod: &v1.Pod{
-				Spec: v1.PodSpec{Containers: []v1.Container{
-					{Name: "main", Ports: []v1.ContainerPort{{ContainerPort: 443, Protocol: v1.ProtocolTCP}}},
-					{Name: "sidecar", Ports: []v1.ContainerPort{{ContainerPort: 8443, Protocol: v1.ProtocolTCP}}},
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{
+					{Name: "main", Ports: []corev1.ContainerPort{{ContainerPort: 443, Protocol: corev1.ProtocolTCP}}},
+					{Name: "sidecar", Ports: []corev1.ContainerPort{{ContainerPort: 8443, Protocol: corev1.ProtocolTCP}}},
 				}},
 			},
 			execContainer: "main",
@@ -360,11 +360,11 @@ func TestDiscoverPortsFromSecondaryContainers(t *testing.T) {
 		},
 		{
 			name: "multiple secondary containers",
-			pod: &v1.Pod{
-				Spec: v1.PodSpec{Containers: []v1.Container{
-					{Name: "main", Ports: []v1.ContainerPort{{ContainerPort: 443, Protocol: v1.ProtocolTCP}}},
-					{Name: "sidecar1", Ports: []v1.ContainerPort{{ContainerPort: 8443, Protocol: v1.ProtocolTCP}}},
-					{Name: "sidecar2", Ports: []v1.ContainerPort{{ContainerPort: 9090, Protocol: v1.ProtocolTCP}}},
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{
+					{Name: "main", Ports: []corev1.ContainerPort{{ContainerPort: 443, Protocol: corev1.ProtocolTCP}}},
+					{Name: "sidecar1", Ports: []corev1.ContainerPort{{ContainerPort: 8443, Protocol: corev1.ProtocolTCP}}},
+					{Name: "sidecar2", Ports: []corev1.ContainerPort{{ContainerPort: 9090, Protocol: corev1.ProtocolTCP}}},
 				}},
 			},
 			execContainer: "main",
@@ -372,12 +372,12 @@ func TestDiscoverPortsFromSecondaryContainers(t *testing.T) {
 		},
 		{
 			name: "UDP ports excluded",
-			pod: &v1.Pod{
-				Spec: v1.PodSpec{Containers: []v1.Container{
-					{Name: "main", Ports: []v1.ContainerPort{{ContainerPort: 443, Protocol: v1.ProtocolTCP}}},
-					{Name: "sidecar", Ports: []v1.ContainerPort{
-						{ContainerPort: 8443, Protocol: v1.ProtocolTCP},
-						{ContainerPort: 53, Protocol: v1.ProtocolUDP},
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{
+					{Name: "main", Ports: []corev1.ContainerPort{{ContainerPort: 443, Protocol: corev1.ProtocolTCP}}},
+					{Name: "sidecar", Ports: []corev1.ContainerPort{
+						{ContainerPort: 8443, Protocol: corev1.ProtocolTCP},
+						{ContainerPort: 53, Protocol: corev1.ProtocolUDP},
 					}},
 				}},
 			},
@@ -402,33 +402,33 @@ func TestDiscoverPortsFromSecondaryContainers(t *testing.T) {
 func intPort(n int) intstr.IntOrString      { return intstr.FromInt(n) }
 func namedPort(s string) intstr.IntOrString { return intstr.FromString(s) }
 
-func httpProbe(port intstr.IntOrString) *v1.Probe {
-	return &v1.Probe{ProbeHandler: v1.ProbeHandler{HTTPGet: &v1.HTTPGetAction{Port: port, Scheme: v1.URISchemeHTTP}}}
+func httpProbe(port intstr.IntOrString) *corev1.Probe {
+	return &corev1.Probe{ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Port: port, Scheme: corev1.URISchemeHTTP}}}
 }
 
-func httpsProbe(port intstr.IntOrString) *v1.Probe {
-	return &v1.Probe{ProbeHandler: v1.ProbeHandler{HTTPGet: &v1.HTTPGetAction{Port: port, Scheme: v1.URISchemeHTTPS}}}
+func httpsProbe(port intstr.IntOrString) *corev1.Probe {
+	return &corev1.Probe{ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Port: port, Scheme: corev1.URISchemeHTTPS}}}
 }
 
-func tcpProbe(port intstr.IntOrString) *v1.Probe {
-	return &v1.Probe{ProbeHandler: v1.ProbeHandler{TCPSocket: &v1.TCPSocketAction{Port: port}}}
+func tcpProbe(port intstr.IntOrString) *corev1.Probe {
+	return &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: port}}}
 }
 
-func grpcProbe(port int32) *v1.Probe {
-	return &v1.Probe{ProbeHandler: v1.ProbeHandler{GRPC: &v1.GRPCAction{Port: port}}}
+func grpcProbe(port int32) *corev1.Probe {
+	return &corev1.Probe{ProbeHandler: corev1.ProbeHandler{GRPC: &corev1.GRPCAction{Port: port}}}
 }
 
 func TestGetPlaintextProbePorts(t *testing.T) {
 	tests := []struct {
 		name string
-		pod  *v1.Pod
+		pod  *corev1.Pod
 		want map[int]bool
 	}{
 		{
 			name: "http liveness probe by integer port",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec: v1.PodSpec{Containers: []v1.Container{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{
 					{Name: "c", LivenessProbe: httpProbe(intPort(10301))},
 				}},
 			},
@@ -436,13 +436,13 @@ func TestGetPlaintextProbePorts(t *testing.T) {
 		},
 		{
 			name: "http liveness probe via named port",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec: v1.PodSpec{Containers: []v1.Container{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{
 					{
 						Name: "c",
-						Ports: []v1.ContainerPort{
-							{Name: "healthz", ContainerPort: 10301, Protocol: v1.ProtocolTCP},
+						Ports: []corev1.ContainerPort{
+							{Name: "healthz", ContainerPort: 10301, Protocol: corev1.ProtocolTCP},
 						},
 						LivenessProbe: httpProbe(namedPort("healthz")),
 					},
@@ -452,9 +452,9 @@ func TestGetPlaintextProbePorts(t *testing.T) {
 		},
 		{
 			name: "https liveness probe is NOT skipped",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec: v1.PodSpec{Containers: []v1.Container{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{
 					{Name: "c", LivenessProbe: httpsProbe(intPort(8443))},
 				}},
 			},
@@ -462,9 +462,9 @@ func TestGetPlaintextProbePorts(t *testing.T) {
 		},
 		{
 			name: "tcp readiness probe",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec: v1.PodSpec{Containers: []v1.Container{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{
 					{Name: "c", ReadinessProbe: tcpProbe(intPort(9090))},
 				}},
 			},
@@ -472,9 +472,9 @@ func TestGetPlaintextProbePorts(t *testing.T) {
 		},
 		{
 			name: "grpc startup probe",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec: v1.PodSpec{Containers: []v1.Container{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{
 					{Name: "c", StartupProbe: grpcProbe(5000)},
 				}},
 			},
@@ -482,9 +482,9 @@ func TestGetPlaintextProbePorts(t *testing.T) {
 		},
 		{
 			name: "all three probe types across multiple containers",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec: v1.PodSpec{Containers: []v1.Container{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{
 					{
 						Name:           "c1",
 						LivenessProbe:  httpProbe(intPort(8081)),
@@ -500,9 +500,9 @@ func TestGetPlaintextProbePorts(t *testing.T) {
 		},
 		{
 			name: "named port not found returns zero — port excluded",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec: v1.PodSpec{Containers: []v1.Container{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{
 					{Name: "c", LivenessProbe: httpProbe(namedPort("missing"))},
 				}},
 			},
@@ -510,17 +510,17 @@ func TestGetPlaintextProbePorts(t *testing.T) {
 		},
 		{
 			name: "init container plaintext probe",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
 						{Name: "main"},
 					},
-					InitContainers: []v1.Container{
+					InitContainers: []corev1.Container{
 						{
 							Name: "init",
-							Ports: []v1.ContainerPort{
-								{Name: "healthz", ContainerPort: 9440, Protocol: v1.ProtocolTCP},
+							Ports: []corev1.ContainerPort{
+								{Name: "healthz", ContainerPort: 9440, Protocol: corev1.ProtocolTCP},
 							},
 							LivenessProbe: httpProbe(namedPort("healthz")),
 						},
@@ -531,9 +531,9 @@ func TestGetPlaintextProbePorts(t *testing.T) {
 		},
 		{
 			name: "no probes",
-			pod: &v1.Pod{
+			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
-				Spec: v1.PodSpec{Containers: []v1.Container{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{
 					{Name: "c"},
 				}},
 			},
