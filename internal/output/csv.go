@@ -15,7 +15,7 @@ import (
 
 var csvColumns = []string{
 	"IP", "Port", "Protocol", "Service", "STARTTLS Protocol", "Pod Name", "Namespace", "Component Name", "Component Maintainer",
-	"Process", "TLS Ciphers", "TLS Version", "TLS Supported Groups", "Status", "Reason", "Listen Address",
+	"Process", "TLS Ciphers", "TLS Version", "TLS Supported Groups", "Cert Signature Algorithms", "Status", "Reason", "Listen Address",
 	"TLS 1.3 Supported", "ML-KEM Supported", "ML-KEM KEMs", "All KEMs",
 	"TLS 1.3 Offered", "TLS 1.2 Only", "PQC Capable", "Readiness Notes",
 	"Ingress Configured Profile", "Ingress Configured MinVersion", "Ingress MinVersion Compliance", "Ingress Configured Ciphers", "Ingress Cipher Compliance",
@@ -133,6 +133,7 @@ func WriteCSVOutput(results scanner.ScanResults, filename string) error {
 				"TLS Ciphers":                   joinOrNA(portResult.TlsCiphers),
 				"TLS Version":                   joinOrNA(portResult.TlsVersions),
 				"TLS Supported Groups":          supportedGroups,
+				"Cert Signature Algorithms":     joinOrNA(portResult.TlsCertSignatureAlgorithms),
 				"Status":                        statusStr,
 				"Reason":                        stringOrNA(portResult.Reason),
 				"Listen Address":                stringOrNA(portResult.ListenAddress),

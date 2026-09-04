@@ -20,6 +20,12 @@ const (
 	// KubeletComponent covers ports whose effective TLS profile is the
 	// KubeletConfig profile (with APIServer fallback when no override is set).
 	KubeletComponent
+	// ExemptComponent covers ports that are exempt from TLS profile compliance,
+	// e.g. CI-only tooling injected into test clusters that is not part of the
+	// product and has no mechanism to honor the cluster TLS profile. No
+	// compliance result is populated, so the port is reported but never counts
+	// as a failure.
+	ExemptComponent
 )
 
 func getMinVersionValue(versions []string) int {
@@ -57,6 +63,7 @@ func evaluateCompliance(scannedMinVer int, scannedCiphers []string, input profil
 // honours the profile that applies to its component type:
 //   - IngressComponent  → IngressController profile (or APIServer if no override)
 //   - KubeletComponent  → KubeletConfig profile     (or APIServer if no override)
+//   - ExemptComponent   → no check; all compliance results stay nil
 //   - GenericComponent  → APIServer profile
 //
 // Only the relevant TLSConfigComplianceResult field on portResult is populated,
@@ -68,6 +75,8 @@ func CheckCompliance(portResult *PortResult, tlsProfile *k8s.TLSSecurityProfile,
 	}
 
 	switch componentType {
+	case ExemptComponent:
+		return
 	case IngressComponent:
 		if ing := tlsProfile.IngressController; ing != nil {
 			portResult.IngressTLSConfigCompliance = &TLSConfigComplianceResult{}
