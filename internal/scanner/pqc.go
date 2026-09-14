@@ -3,6 +3,7 @@ package scanner
 import (
 	"log/slog"
 	"slices"
+	"strings"
 )
 
 type PortFilter func(status ScanStatus) bool
@@ -33,7 +34,7 @@ func PopulatePQCFields(pr *PortResult) {
 
 	seen := make(map[string]bool)
 	for _, g := range pr.TlsKeyExchange.Groups {
-		if !seen[g] {
+		if groupProvidesKeyEncapsulation(g) && !seen[g] {
 			pr.AllKEMs = append(pr.AllKEMs, g)
 			seen[g] = true
 		}
@@ -48,6 +49,12 @@ func PopulatePQCFields(pr *PortResult) {
 	}
 
 	populateTLSReadiness(pr)
+}
+
+// groupProvidesKeyEncapsulation returns true if we believe the group provided
+// as an argument supports key encapsulation mechanism.
+func groupProvidesKeyEncapsulation(group string) bool {
+	return strings.Contains(strings.ToLower(group), "kem")
 }
 
 func populateTLSReadiness(pr *PortResult) {

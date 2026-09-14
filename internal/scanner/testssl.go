@@ -265,9 +265,12 @@ func ExtractKeyExchangeFromTestSSL(jsonData []byte) *KeyExchangeInfo {
 				if p != "" && !slices.Contains(kemGroups, p) {
 					kemGroups = append(kemGroups, p)
 				}
+				if p != "" && !slices.Contains(allGroups, p) {
+					allGroups = append(allGroups, p)
+				}
 			}
 
-		case id == "supported_groups" || id == "named_groups" || id == "curves":
+		case id == "supported_groups" || id == "named_groups" || id == "curves" || id == "FS_ECDHE_curves":
 			parts := strings.Fields(findingValue)
 			for _, p := range parts {
 				p = strings.TrimSpace(p)
@@ -297,7 +300,7 @@ func ExtractKeyExchangeFromTestSSL(jsonData []byte) *KeyExchangeInfo {
 	keyExchange.ForwardSecrecy.ECDHE = ecdheCiphers
 	keyExchange.ForwardSecrecy.KEMs = kemGroups
 
-	if len(kemGroups) > 0 {
+	if forwardSecrecySupported(allGroups) {
 		keyExchange.ForwardSecrecy.Supported = true
 	}
 
@@ -306,6 +309,25 @@ func ExtractKeyExchangeFromTestSSL(jsonData []byte) *KeyExchangeInfo {
 	}
 
 	return keyExchange
+}
+
+// forwardSecrecySupported returns true if among the list of provided secret
+// key exchange groups there is a group that supports forward secrecy through
+// ephemeral keys.
+func forwardSecrecySupported(groups []string) bool {
+	for _, group := range groups {
+		normalized := strings.ToLower(group)
+		if normalized == "prime256v1" {
+			return true
+		}
+		if normalized == "secp384r1" {
+			return true
+		}
+		if strings.HasPrefix(normalized, "x25519") {
+			return true
+		}
+	}
+	return false
 }
 
 func IsKEMGroup(name string) bool {
