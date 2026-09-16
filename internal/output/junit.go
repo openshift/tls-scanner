@@ -126,7 +126,10 @@ func WriteJUnitOutput(scanResults scanner.ScanResults, filename string, pqcCheck
 
 			var failures []string
 			if pqcCheck {
-				if portResult.Status == scanner.StatusOK {
+				switch portResult.Status {
+				case scanner.StatusNoTLS:
+					failures = append(failures, "PQC: no TLS detected.")
+				case scanner.StatusOK:
 					if !portResult.TLS13Supported {
 						failures = append(failures, "PQC: TLS 1.3 not supported.")
 					}
@@ -144,6 +147,10 @@ func WriteJUnitOutput(scanResults scanner.ScanResults, filename string, pqcCheck
 				if portResult.KubeletTLSConfigCompliance != nil && !scanner.IsTLSConfigCompliant(portResult.KubeletTLSConfigCompliance) {
 					failures = append(failures, "Kubelet TLS config is not compliant.")
 				}
+			}
+
+			if !pqcCheck && len(failures) > 0 && portResult.Status == scanner.StatusNoTLS {
+				failures = append(failures, "No TLS detected.")
 			}
 
 			switch {
