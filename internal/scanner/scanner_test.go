@@ -921,3 +921,52 @@ func TestHasPQCComplianceFailures(t *testing.T) {
 		t.Fatal("expected no pqc failures for tls13 + valid mlkem")
 	}
 }
+
+// Exercise classification, policy resolution, and both verdicts together.
+func TestNoTLSBatchVerdicts(t *testing.T) {
+	testutil.InstallMockTestSSL(t)
+	t.Setenv("MOCK_NO_TLS", "1")
+	for _, tc := range []struct {
+		name           string
+		strict, exempt bool
+		wantFailure    bool
+	}{
+		{"strict", true, false, true},
+		{"legacy", false, false, false},
+		{"exempt", true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			profile := intermediateProfile()
+			if tc.strict {
+				profile.TLSAdherence = "StrictAllComponents"
+			}
+			policy := testPolicy(t)
+			if tc.exempt {
+				policy = &ComponentPolicy{Rules: []PolicyRule{{Profile: ProfileExempt}}}
+			}
+			jobs := []ScanJob{{IP: "10.0.0.1", Port: 8080, Pod: makePod("plaintext", "test", "10.0.0.1", 8080)}}
+			ports := batchScan(jobs, 1, nil, profile, policy, DefaultScanTimeouts, nil)
+			if len(ports) != 1 || ports[0].result.Status != StatusNoTLS {
+				t.Fatalf("expected one NO_TLS result, got %+v", ports)
+			}
+			results := assembleResults(time.Now(), 1, profile, ports)
+			if got := HasComplianceFailures(results); got != tc.wantFailure {
+				t.Fatalf("profile failure = %v, want %v", got, tc.wantFailure)
+			}
+			if !HasPQCComplianceFailures(results, SkipUnscannable) {
+				t.Fatal("NO_TLS must fail PQC, including profile-exempt endpoints")
+			}
+		})
+	}
+}
+
+func TestPQCExcludedStatuses(t *testing.T) {
+	for _, status := range []ScanStatus{StatusNoPorts, StatusLocalhostOnly, StatusProbePort} {
+		t.Run(string(status), func(t *testing.T) {
+			results := ScanResults{IPResults: []IPResult{{PortResults: []PortResult{{Status: status}}}}}
+			if HasPQCComplianceFailures(results, SkipUnscannable) {
+				t.Fatal("excluded endpoint failed PQC")
+			}
+		})
+	}
+}

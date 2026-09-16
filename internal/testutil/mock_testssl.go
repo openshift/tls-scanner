@@ -11,6 +11,7 @@ import (
 // It reads a targets file and writes a JSON array of findings.
 // Set MOCK_NO_MLKEM=1 in the environment to suppress ML-KEM findings,
 // simulating a host that does not support post-quantum key exchange.
+// Set MOCK_NO_TLS=1 to emit a completed probe with no TLS offered.
 const MockTestSSLScript = `#!/bin/bash
 JSONFILE=""
 TARGETS_FILE=""
@@ -32,6 +33,10 @@ while IFS= read -r target; do
     ip="${target%%:*}"
     port="${target##*:}"
     [ "$FIRST" = true ] && FIRST=false || printf ','
+    if [ -n "${MOCK_NO_TLS:-}" ]; then
+        printf '{"id":"TLS1_3","ip":"%s/%s","port":"%s","severity":"INFO","finding":"not offered"}' "$ip" "$ip" "$port"
+        continue
+    fi
     printf '{"id":"TLS1_2","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"},' "$ip" "$ip" "$port" "$SERVICE"
     printf '{"id":"TLS1_3","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"},' "$ip" "$ip" "$port" "$SERVICE"
     printf '{"id":"FS","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"},' "$ip" "$ip" "$port" "$SERVICE"

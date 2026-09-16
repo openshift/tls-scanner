@@ -35,7 +35,7 @@ func run(args []string) (exitCode int) {
 			return
 		}
 		if isPQCCheck {
-			// SkipUnscannable excludes NoPorts/LocalhostOnly/NoTLS — swap with a custom PortFilter if rules change
+			// SkipUnscannable excludes NoPorts/LocalhostOnly/ProbePort — swap with a custom PortFilter if rules change
 			if scanner.HasPQCComplianceFailures(*finalScanResults, scanner.SkipUnscannable) {
 				fmt.Println("\nPQC COMPLIANCE CHECK: FAILED")
 				fmt.Println("One or more endpoints do not support TLS 1.3 + ML-KEM (x25519mlkem768 or mlkem768)")
