@@ -28,8 +28,8 @@ func WriteJSONOutput(data interface{}, filename string) error {
 	return nil
 }
 
-func WriteOutputFiles(results scanner.ScanResults, artifactDir, jsonFile, csvFile, junitFile string, pqcCheck bool) error {
-	if jsonFile == "" && csvFile == "" && junitFile == "" {
+func WriteOutputFiles(results scanner.ScanResults, artifactDir, jsonFile, csvFile, junitFile, attestationFile string, pqcCheck bool, meta *AttestationMeta) error {
+	if jsonFile == "" && csvFile == "" && junitFile == "" && attestationFile == "" {
 		return nil
 	}
 
@@ -39,10 +39,7 @@ func WriteOutputFiles(results scanner.ScanResults, artifactDir, jsonFile, csvFil
 	slog.Info("artifacts directory created", "path", artifactDir)
 
 	if jsonFile != "" {
-		jsonPath := jsonFile
-		if !filepath.IsAbs(jsonPath) {
-			jsonPath = filepath.Join(artifactDir, jsonFile)
-		}
+		jsonPath := resolveOutputPath(artifactDir, jsonFile)
 		if err := WriteJSONOutput(results, jsonPath); err != nil {
 			slog.Error("writing JSON output", "error", err)
 		} else {
@@ -51,10 +48,7 @@ func WriteOutputFiles(results scanner.ScanResults, artifactDir, jsonFile, csvFil
 	}
 
 	if csvFile != "" {
-		csvPath := csvFile
-		if !filepath.IsAbs(csvPath) {
-			csvPath = filepath.Join(artifactDir, csvFile)
-		}
+		csvPath := resolveOutputPath(artifactDir, csvFile)
 		if err := WriteCSVOutput(results, csvPath); err != nil {
 			slog.Error("writing CSV output", "error", err)
 		} else {
@@ -72,14 +66,22 @@ func WriteOutputFiles(results scanner.ScanResults, artifactDir, jsonFile, csvFil
 	}
 
 	if junitFile != "" {
-		junitPath := junitFile
-		if !filepath.IsAbs(junitPath) {
-			junitPath = filepath.Join(artifactDir, junitFile)
-		}
+		junitPath := resolveOutputPath(artifactDir, junitFile)
 		if err := WriteJUnitOutput(results, junitPath, pqcCheck); err != nil {
 			slog.Error("writing JUnit XML output", "error", err)
 		} else {
 			slog.Info("JUnit XML results written", "path", junitPath)
+		}
+	}
+
+	if attestationFile != "" {
+		attestationPath := resolveOutputPath(artifactDir, attestationFile)
+		attMeta := AttestationMeta{}
+		if meta != nil {
+			attMeta = *meta
+		}
+		if err := WriteAttestationFile(results, attestationPath, pqcCheck, attMeta); err != nil {
+			slog.Error("writing attestation output", "error", err)
 		}
 	}
 

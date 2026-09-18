@@ -16,7 +16,7 @@ spec:
         args:
           - |
             # Run the scanner in the background and capture its exit code
-            /usr/local/bin/tls-scanner --all-pods -j ${SCANNER_PARALLEL:-4} --artifact-dir /artifacts --json-file /artifacts/results.json --csv-file /artifacts/results.csv --timing-file timing.txt --log-file /artifacts/scan.log ${NAMESPACE_FILTER_ARG} ${LIMIT_IPS_ARG} ${STARTTLS_PORTS_ARG} &
+            /usr/local/bin/tls-scanner --all-pods -j ${SCANNER_PARALLEL:-4} --artifact-dir /artifacts --json-file /artifacts/results.json --csv-file /artifacts/results.csv --attestation-file /artifacts/tls-posture.intoto.json --timing-file timing.txt --log-file /artifacts/scan.log ${NAMESPACE_FILTER_ARG} ${LIMIT_IPS_ARG} ${STARTTLS_PORTS_ARG} &
             
             SCANNER_PID=$!
             
