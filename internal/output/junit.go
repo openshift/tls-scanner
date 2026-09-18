@@ -12,6 +12,14 @@ import (
 	"github.com/openshift/tls-scanner/internal/scanner"
 )
 
+func hostname() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return "unknown"
+	}
+	return h
+}
+
 // tlsAdherenceGate tags adherence testcases so the feature-gate promotion
 // tooling (openshift/api) can match them to the TLSAdherence gate. It must
 // appear verbatim in every test name that provides promotion evidence.
@@ -24,6 +32,8 @@ type JUnitTestSuite struct {
 	Failures   int             `xml:"failures,attr"`
 	Skipped    int             `xml:"skipped,attr,omitempty"`
 	Time       float64         `xml:"time,attr"`
+	Timestamp  string          `xml:"timestamp,attr,omitempty"`
+	Hostname   string          `xml:"hostname,attr,omitempty"`
 	Properties []JUnitProperty `xml:"properties>property,omitempty"`
 	TestCases  []JUnitTestCase `xml:"testcase"`
 }
@@ -95,7 +105,10 @@ func endpointDescription(ipResult scanner.IPResult, portResult scanner.PortResul
 
 func WriteJUnitOutput(scanResults scanner.ScanResults, filename string, pqcCheck bool) error {
 	testSuite := JUnitTestSuite{
-		Name: "TLSSecurityScan",
+		Name:      "TLSSecurityScan",
+		Time:      scanResults.Duration.Seconds(),
+		Timestamp: scanResults.Timestamp,
+		Hostname:  hostname(),
 	}
 
 	enforceTLSCompliance := scanner.TLSConfigComplianceFailuresEnforced(scanResults)

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/openshift/tls-scanner/internal/k8s"
 	"github.com/openshift/tls-scanner/internal/scanner"
@@ -12,9 +13,11 @@ import (
 
 func testScanResults() scanner.ScanResults {
 	return scanner.ScanResults{
-		Timestamp:  "2026-05-13T12:00:00Z",
-		TotalIPs:   1,
-		ScannedIPs: 1,
+		Timestamp:       "2026-05-13T12:00:00Z",
+		Duration:        5 * time.Second,
+		DurationSeconds: 5.0,
+		TotalIPs:        1,
+		ScannedIPs:      1,
 		IPResults: []scanner.IPResult{{
 			IP:     "10.0.0.1",
 			Status: "scanned",

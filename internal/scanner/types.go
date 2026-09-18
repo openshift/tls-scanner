@@ -1,6 +1,8 @@
 package scanner
 
 import (
+	"time"
+
 	"github.com/openshift/tls-scanner/internal/k8s"
 )
 
@@ -54,6 +56,8 @@ type Elem struct {
 
 type ScanResults struct {
 	Timestamp         string                  `json:"timestamp"`
+	DurationSeconds   float64                 `json:"duration_seconds"`
+	Duration          time.Duration           `json:"-"`
 	TotalIPs          int                     `json:"total_ips"`
 	ScannedIPs        int                     `json:"scanned_ips"`
 	IPResults         []IPResult              `json:"ip_results"`
