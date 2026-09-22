@@ -29,25 +29,43 @@ func main() {
 func run(args []string) (exitCode int) {
 	var finalScanResults *scanner.ScanResults
 	var isPQCCheck bool
+	var expectedGroups []string
+	var expectedGroupsMode scanner.GroupsCheckMode
 
 	defer func() {
 		if finalScanResults == nil {
 			return
 		}
+		failed := false
 		if isPQCCheck {
 			// SkipUnscannable excludes NoPorts/LocalhostOnly/NoTLS — swap with a custom PortFilter if rules change
 			if scanner.HasPQCComplianceFailures(*finalScanResults, scanner.SkipUnscannable) {
 				fmt.Println("\nPQC COMPLIANCE CHECK: FAILED")
 				fmt.Println("One or more endpoints do not support TLS 1.3 + ML-KEM (x25519mlkem768 or mlkem768)")
-				exitCode = 1
-				return
+				failed = true
+			} else {
+				fmt.Println("\nPQC COMPLIANCE CHECK: PASSED")
+				fmt.Println("All endpoints support TLS 1.3 + ML-KEM")
 			}
-			fmt.Println("\nPQC COMPLIANCE CHECK: PASSED")
-			fmt.Println("All endpoints support TLS 1.3 + ML-KEM")
-		} else {
-			if scanner.HasComplianceFailures(*finalScanResults) {
-				exitCode = 1
+		} else if scanner.HasComplianceFailures(*finalScanResults) {
+			failed = true
+		}
+
+		if len(expectedGroups) > 0 {
+			if scanner.HasExpectedGroupsFailures(*finalScanResults, expectedGroups, expectedGroupsMode, scanner.SkipUnscannable) {
+				fmt.Println("\nEXPECTED GROUPS CHECK: FAILED")
+				fmt.Printf("One or more endpoints do not match expected groups (mode=%s): %s\n",
+					expectedGroupsMode, strings.Join(expectedGroups, ","))
+				failed = true
+			} else {
+				fmt.Println("\nEXPECTED GROUPS CHECK: PASSED")
+				fmt.Printf("All endpoints match expected groups (mode=%s): %s\n",
+					expectedGroupsMode, strings.Join(expectedGroups, ","))
 			}
+		}
+
+		if failed {
+			exitCode = 1
 		}
 	}()
 
@@ -68,6 +86,8 @@ func run(args []string) (exitCode int) {
 	limitIPs := fs.Int("limit-ips", 0, "Limit the number of IPs to scan for testing purposes (0 = no limit)")
 	logFile := fs.String("log-file", "", "Redirect all log output to the specified file")
 	pqcCheck := fs.Bool("pqc-check", false, "Quick check for TLS 1.3 and ML-KEM (post-quantum) support only")
+	expectedGroupsFlag := fs.String("expected-groups", "", "Comma-separated TLS named groups/curves that endpoints must offer (e.g. X25519MLKEM768,x25519). Independent of --pqc-check.")
+	expectedGroupsModeFlag := fs.String("expected-groups-mode", "contains", "How to evaluate --expected-groups: contains (required subset) or exact (set equality)")
 	timingFile := fs.String("timing-file", "", "Output timing report to specified file in artifact-dir")
 	dryRun := fs.Bool("dry-run", false, "Discover scan targets and print them without scanning")
 	showVersion := fs.Bool("version", false, "Print version and exit")
@@ -106,6 +126,18 @@ func run(args []string) (exitCode int) {
 	}
 
 	isPQCCheck = *pqcCheck
+
+	var groupsModeErr error
+	expectedGroupsMode, groupsModeErr = scanner.ParseGroupsCheckMode(*expectedGroupsModeFlag)
+	if groupsModeErr != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", groupsModeErr)
+		return 2
+	}
+	expectedGroups = scanner.ParseExpectedGroups(*expectedGroupsFlag)
+	if *expectedGroupsModeFlag != "" && *expectedGroupsModeFlag != "contains" && len(expectedGroups) == 0 {
+		fmt.Fprintf(os.Stderr, "Error: --expected-groups-mode requires --expected-groups\n")
+		return 2
+	}
 
 	if *generateTemplate != "" {
 		if err := scanner.GenerateTemplate(*generateTemplate); err != nil {
