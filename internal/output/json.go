@@ -28,7 +28,7 @@ func WriteJSONOutput(data interface{}, filename string) error {
 	return nil
 }
 
-func WriteOutputFiles(results scanner.ScanResults, artifactDir, jsonFile, csvFile, junitFile string, pqcCheck bool) error {
+func WriteOutputFiles(results scanner.ScanResults, artifactDir, jsonFile, csvFile, junitFile string, pqcCheck bool, expectedGroups []string, expectedGroupsMode scanner.GroupsCheckMode) error {
 	if jsonFile == "" && csvFile == "" && junitFile == "" {
 		return nil
 	}
@@ -76,7 +76,7 @@ func WriteOutputFiles(results scanner.ScanResults, artifactDir, jsonFile, csvFil
 		if !filepath.IsAbs(junitPath) {
 			junitPath = filepath.Join(artifactDir, junitFile)
 		}
-		if err := WriteJUnitOutput(results, junitPath, pqcCheck); err != nil {
+		if err := WriteJUnitOutputWithGroups(results, junitPath, pqcCheck, expectedGroups, expectedGroupsMode); err != nil {
 			slog.Error("writing JUnit XML output", "error", err)
 		} else {
 			slog.Info("JUnit XML results written", "path", junitPath)

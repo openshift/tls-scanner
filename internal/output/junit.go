@@ -94,6 +94,13 @@ func endpointDescription(ipResult scanner.IPResult, portResult scanner.PortResul
 }
 
 func WriteJUnitOutput(scanResults scanner.ScanResults, filename string, pqcCheck bool) error {
+	return WriteJUnitOutputWithGroups(scanResults, filename, pqcCheck, nil, "")
+}
+
+// WriteJUnitOutputWithGroups writes the standard TLS/PQC JUnit cases and, when
+// expectedGroups is non-empty, a second per-workload case asserting advertised
+// TLS named groups/curves (Spyglass).
+func WriteJUnitOutputWithGroups(scanResults scanner.ScanResults, filename string, pqcCheck bool, expectedGroups []string, expectedGroupsMode scanner.GroupsCheckMode) error {
 	testSuite := JUnitTestSuite{
 		Name: "TLSSecurityScan",
 	}
@@ -171,36 +178,20 @@ func WriteJUnitOutput(scanResults scanner.ScanResults, filename string, pqcCheck
 	}
 
 	sort.Strings(groupOrder)
-	for _, subject := range groupOrder {
-		group := groups[subject]
+	appendGroupedTestCases(&testSuite, groups, groupOrder, namePrefix, checkDescription, "TLS Compliance Failed", "TLSComplianceCheck")
 
-		testCase := JUnitTestCase{
-			Name:      fmt.Sprintf("%s%s %s", namePrefix, group.subject, checkDescription),
-			ClassName: group.className,
+	if len(expectedGroups) > 0 {
+		if expectedGroupsMode == "" {
+			expectedGroupsMode = scanner.GroupsModeContains
 		}
-
-		switch {
-		case len(group.failures) > 0:
-			testCase.Failure = &JUnitFailure{
-				Message: "TLS Compliance Failed",
-				Type:    "TLSComplianceCheck",
-				Content: strings.Join(group.failures, "\n"),
-			}
-			testSuite.Failures++
-		case len(group.scanned) == 0:
-			// Every endpoint of this workload/port was unreachable for a
-			// TLS handshake (e.g. blocked by NetworkPolicy) or served no
-			// TLS. Skipping instead of passing keeps unverified endpoints
-			// from counting as evidence that the check succeeded.
-			testCase.Skipped = &JUnitSkipped{
-				Message: strings.Join(group.skips, "; "),
-			}
-			testSuite.Skipped++
-		default:
-			testCase.SystemOut = strings.Join(append(group.scanned, group.skips...), "\n")
+		groupsCheck := collectExpectedGroupsCases(scanResults, expectedGroups, expectedGroupsMode)
+		var groupsOrder []string
+		for subject := range groupsCheck {
+			groupsOrder = append(groupsOrder, subject)
 		}
-
-		testSuite.TestCases = append(testSuite.TestCases, testCase)
+		sort.Strings(groupsOrder)
+		groupsDescription := fmt.Sprintf("should offer TLS groups (mode=%s): %s", expectedGroupsMode, strings.Join(expectedGroups, ","))
+		appendGroupedTestCases(&testSuite, groupsCheck, groupsOrder, "[sig-security] ", groupsDescription, "TLS Groups Check Failed", "TLSGroupsCheck")
 	}
 
 	testSuite.Tests = len(testSuite.TestCases)
@@ -227,4 +218,76 @@ func WriteJUnitOutput(scanResults scanner.ScanResults, filename string, pqcCheck
 	}
 
 	return nil
+}
+
+func collectExpectedGroupsCases(scanResults scanner.ScanResults, expected []string, mode scanner.GroupsCheckMode) map[string]*endpointGroup {
+	groups := map[string]*endpointGroup{}
+	for _, ipResult := range scanResults.IPResults {
+		for _, portResult := range ipResult.PortResults {
+			if portResult.Status == scanner.StatusNoPorts ||
+				portResult.Status == scanner.StatusLocalhostOnly ||
+				portResult.Status == scanner.StatusProbePort {
+				continue
+			}
+
+			subject, className := groupSubject(ipResult, portResult.Port)
+			group, ok := groups[subject]
+			if !ok {
+				group = &endpointGroup{subject: subject, className: className}
+				groups[subject] = group
+			}
+
+			endpoint := endpointDescription(ipResult, portResult)
+			if scanner.SkipUnscannable(portResult.Status) || portResult.Status != scanner.StatusOK {
+				reason := portResult.Reason
+				if reason == "" {
+					reason = string(portResult.Status)
+				}
+				group.skips = append(group.skips, fmt.Sprintf("%s: %s", endpoint, reason))
+				continue
+			}
+
+			observed := scanner.ObservedGroups(portResult)
+			if scanner.CheckExpectedGroups(observed, expected, mode) {
+				detail := endpoint
+				if len(observed) > 0 {
+					detail = fmt.Sprintf("%s groups=[%s]", endpoint, strings.Join(observed, ", "))
+				}
+				group.scanned = append(group.scanned, detail)
+				continue
+			}
+			group.failures = append(group.failures, fmt.Sprintf(
+				"%s: observed groups [%s] do not match expected groups (mode=%s): %s",
+				endpoint, strings.Join(observed, ", "), mode, strings.Join(expected, ","),
+			))
+		}
+	}
+	return groups
+}
+
+func appendGroupedTestCases(testSuite *JUnitTestSuite, groups map[string]*endpointGroup, groupOrder []string, namePrefix, checkDescription, failureMessage, failureType string) {
+	for _, subject := range groupOrder {
+		group := groups[subject]
+		testCase := JUnitTestCase{
+			Name:      fmt.Sprintf("%s%s %s", namePrefix, group.subject, checkDescription),
+			ClassName: group.className,
+		}
+		switch {
+		case len(group.failures) > 0:
+			testCase.Failure = &JUnitFailure{
+				Message: failureMessage,
+				Type:    failureType,
+				Content: strings.Join(group.failures, "\n"),
+			}
+			testSuite.Failures++
+		case len(group.scanned) == 0:
+			testCase.Skipped = &JUnitSkipped{
+				Message: strings.Join(group.skips, "; "),
+			}
+			testSuite.Skipped++
+		default:
+			testCase.SystemOut = strings.Join(append(group.scanned, group.skips...), "\n")
+		}
+		testSuite.TestCases = append(testSuite.TestCases, testCase)
+	}
 }
