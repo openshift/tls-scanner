@@ -258,7 +258,7 @@ func ExtractKeyExchangeFromTestSSL(jsonData []byte) *KeyExchangeInfo {
 				}
 			}
 
-		case id == "FS_KEMs" || strings.HasPrefix(id, "FS_KEM"):
+		case strings.HasPrefix(id, "FS_KEM") && findingValue != "No KEMs offered":
 			parts := strings.Fields(findingValue)
 			for _, p := range parts {
 				p = strings.TrimSpace(p)
