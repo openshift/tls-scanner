@@ -457,3 +457,118 @@ func TestWriteJUnitOutputUsesClassNameFromIP(t *testing.T) {
 		t.Errorf("ClassName = %q, want %q (from IP)", suite.TestCases[0].ClassName, "10.0.0.1")
 	}
 }
+
+func TestWriteJUnitOutputExpectedGroupsFailure(t *testing.T) {
+	t.Parallel()
+
+	results := scanner.ScanResults{
+		IPResults: []scanner.IPResult{{
+			IP:     "10.0.0.1",
+			Status: "scanned",
+			Pod:    deploymentPodInfo("kube-apiserver", "abc123", "xyz", "openshift-kube-apiserver"),
+			PortResults: []scanner.PortResult{{
+				Port:           6443,
+				Protocol:       "tcp",
+				Status:         scanner.StatusOK,
+				TLS13Supported: true,
+				MLKEMSupported: true,
+				TlsKeyExchange: &scanner.KeyExchangeInfo{
+					Groups: []string{"SecP256r1MLKEM768", "X25519MLKEM768", "SecP384r1MLKEM1024"},
+				},
+			}},
+		}},
+	}
+
+	path := filepath.Join(t.TempDir(), "groups.xml")
+	if err := WriteJUnitOutputWithGroups(results, path, true, []string{"SecP384r1MLKEM1024"}, scanner.GroupsModeExact); err != nil {
+		t.Fatalf("WriteJUnitOutputWithGroups returned error: %v", err)
+	}
+
+	suite := readJUnitSuite(t, path)
+	if suite.Tests != 2 {
+		t.Fatalf("Tests = %d, want 2 (PQC + groups), names=%v", suite.Tests, suite.TestCases)
+	}
+
+	var groupsCase *JUnitTestCase
+	for i := range suite.TestCases {
+		if strings.Contains(suite.TestCases[i].Name, "should offer TLS groups") {
+			groupsCase = &suite.TestCases[i]
+			break
+		}
+	}
+	if groupsCase == nil {
+		t.Fatalf("missing TLS groups testcase, got: %v", suite.TestCases)
+	}
+	wantName := "[sig-security] ns/openshift-kube-apiserver deployment/kube-apiserver port/6443 should offer TLS groups (mode=exact): SecP384r1MLKEM1024"
+	if groupsCase.Name != wantName {
+		t.Errorf("groups test name = %q, want %q", groupsCase.Name, wantName)
+	}
+	if strings.Contains(groupsCase.Name, tlsAdherenceGate) {
+		t.Errorf("groups test name %q must not carry the TLSAdherence gate tag", groupsCase.Name)
+	}
+	if groupsCase.Failure == nil {
+		t.Fatal("expected groups assertion to fail in exact mode")
+	}
+	if groupsCase.Failure.Type != "TLSGroupsCheck" {
+		t.Errorf("failure type = %q, want TLSGroupsCheck", groupsCase.Failure.Type)
+	}
+	if !strings.Contains(groupsCase.Failure.Content, "SecP256r1MLKEM768") {
+		t.Errorf("failure should include observed groups, got %q", groupsCase.Failure.Content)
+	}
+}
+
+func TestWriteJUnitOutputExpectedGroupsPass(t *testing.T) {
+	t.Parallel()
+
+	results := scanner.ScanResults{
+		IPResults: []scanner.IPResult{{
+			IP:     "10.0.0.1",
+			Status: "scanned",
+			PortResults: []scanner.PortResult{{
+				Port:   6443,
+				Status: scanner.StatusOK,
+				TlsKeyExchange: &scanner.KeyExchangeInfo{
+					Groups: []string{"SecP384r1MLKEM1024"},
+				},
+			}},
+		}},
+	}
+
+	path := filepath.Join(t.TempDir(), "groups-pass.xml")
+	if err := WriteJUnitOutputWithGroups(results, path, false, []string{"SecP384r1MLKEM1024"}, scanner.GroupsModeExact); err != nil {
+		t.Fatalf("WriteJUnitOutputWithGroups returned error: %v", err)
+	}
+
+	suite := readJUnitSuite(t, path)
+	if suite.Failures != 0 {
+		t.Errorf("Failures = %d, want 0", suite.Failures)
+	}
+	found := false
+	for _, tc := range suite.TestCases {
+		if strings.Contains(tc.Name, "should offer TLS groups") {
+			found = true
+			if tc.Failure != nil {
+				t.Errorf("unexpected groups failure: %s", tc.Failure.Content)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected a TLS groups testcase")
+	}
+}
+
+func TestWriteJUnitOutputOmitsGroupsCasesWithoutExpectedGroups(t *testing.T) {
+	t.Parallel()
+
+	results := testScanResults()
+	path := filepath.Join(t.TempDir(), "no-groups.xml")
+	if err := WriteJUnitOutput(results, path, false); err != nil {
+		t.Fatalf("WriteJUnitOutput returned error: %v", err)
+	}
+	suite := readJUnitSuite(t, path)
+	for _, tc := range suite.TestCases {
+		if strings.Contains(tc.Name, "should offer TLS groups") {
+			t.Fatalf("unexpected groups testcase %q", tc.Name)
+		}
+	}
+}

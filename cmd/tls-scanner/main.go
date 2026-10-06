@@ -238,7 +238,7 @@ func run(args []string) (exitCode int) {
 		scanResults := scanner.Scan(jobs, *concurrentScans, nil, tlsProfileOverride, policy, timeouts, starttlsPorts)
 		finalScanResults = &scanResults
 
-		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
+		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck, expectedGroups, expectedGroupsMode); err != nil {
 			slog.Error("writing output files", "error", err)
 			return 1
 		}
@@ -261,7 +261,7 @@ func run(args []string) (exitCode int) {
 		scanResults := scanner.Scan(jobs, *concurrentScans, nil, tlsProfileOverride, policy, timeouts, starttlsPorts)
 		finalScanResults = &scanResults
 
-		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
+		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck, expectedGroups, expectedGroupsMode); err != nil {
 			slog.Error("writing output files", "error", err)
 			return 1
 		}
@@ -324,7 +324,7 @@ func run(args []string) (exitCode int) {
 		scanResults := scanner.PerformClusterScan(pods, *concurrentScans, client, policy, timeouts, tlsProfileOverride, starttlsPorts)
 		finalScanResults = &scanResults
 
-		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
+		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck, expectedGroups, expectedGroupsMode); err != nil {
 			slog.Error("writing output files", "error", err)
 			return 1
 		}
@@ -353,7 +353,7 @@ func run(args []string) (exitCode int) {
 	scanResults := scanner.Scan(jobs, *concurrentScans, client, tlsProfileOverride, policy, timeouts, starttlsPorts)
 	finalScanResults = &scanResults
 
-	if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
+	if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck, expectedGroups, expectedGroupsMode); err != nil {
 		slog.Error("writing output files", "error", err)
 		return 1
 	}
