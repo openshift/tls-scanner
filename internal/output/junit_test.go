@@ -82,6 +82,15 @@ func TestWriteJUnitOutputBasic(t *testing.T) {
 	if suite.Failures != 0 {
 		t.Errorf("Failures = %d, want 0", suite.Failures)
 	}
+	if suite.Timestamp != "2026-05-13T12:00:00Z" {
+		t.Errorf("Timestamp = %q, want %q", suite.Timestamp, "2026-05-13T12:00:00Z")
+	}
+	if suite.Hostname == "" {
+		t.Error("Hostname should not be empty")
+	}
+	if suite.Time != 5.0 {
+		t.Errorf("Time = %f, want 5.0", suite.Time)
+	}
 }
 
 func TestWriteJUnitOutputPQCFailures(t *testing.T) {
