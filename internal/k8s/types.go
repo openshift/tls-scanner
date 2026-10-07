@@ -7,7 +7,7 @@ import (
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -19,7 +19,7 @@ type PodInfo struct {
 	Image      string
 	IPs        []string
 	Containers []string
-	Pod        *v1.Pod `json:"-"`
+	Pod        *corev1.Pod `json:"-"`
 }
 
 type ListenInfo struct {
