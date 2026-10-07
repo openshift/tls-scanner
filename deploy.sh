@@ -16,6 +16,7 @@
 #   SCANNER_IMAGE    - Image name (default: quay.io/user/tls-scanner:latest)
 #   NAMESPACE        - Target namespace (default: current oc project)
 #   NAMESPACE_FILTER - Comma-separated namespace list to scan
+#   COMPONENT_FILTER - Comma-separated component names to scan (matches app/component/app.kubernetes.io/name labels)
 #   LIMIT_IPS        - Limit number of IPs to scan (default: 0 = no limit)
 #   SCANNER_CPU_REQUEST - CPU request for scanner pod (default: 500m; falls back to SCANNER_CPU if set)
 #   SCANNER_CPU_LIMIT   - CPU limit for scanner pod (default: 4; falls back to SCANNER_CPU if set)
@@ -200,6 +201,12 @@ EOF
     if [ -n "$NAMESPACE_FILTER" ]; then
         NAMESPACE_FILTER_ARG="--namespace-filter $(echo "${NAMESPACE_FILTER}" | tr -d ' ')"
     fi
+
+    COMPONENT_FILTER_ARG=""
+    if [ -n "$COMPONENT_FILTER" ]; then
+        COMPONENT_FILTER_ARG="--component-filter $(echo "${COMPONENT_FILTER}" | tr -d ' ')"
+        echo "--> Filtering scan to component(s): ${COMPONENT_FILTER}"
+    fi
     
     LIMIT_IPS_ARG=""
     if [ "$LIMIT_IPS" -gt 0 ] 2>/dev/null; then
@@ -234,7 +241,7 @@ EOF
     # normal function return.
     trap 'rm -f "$RENDERED_JOB"' EXIT
 
-    sed -e "s|\\\${SCANNER_IMAGE}|${SCANNER_IMAGE}|g" -e "s|\\\${NAMESPACE}|${NAMESPACE}|g" -e "s|\\\${JOB_NAME}|${JOB_NAME}|g" -e "s|\\\${NAMESPACE_FILTER_ARG}|${NAMESPACE_FILTER_ARG}|g" -e "s|\\\${LIMIT_IPS_ARG}|${LIMIT_IPS_ARG}|g" -e "s|\\\${STARTTLS_PORTS_ARG}|${STARTTLS_PORTS_ARG}|g" -e "s|\\\${SCANNER_CPU_REQUEST:-500m}|${SCANNER_CPU_REQUEST}|g" -e "s|\\\${SCANNER_CPU_LIMIT:-4}|${SCANNER_CPU_LIMIT}|g" -e "s|\\\${SCANNER_MEM_REQUEST:-4Gi}|${SCANNER_MEM_REQUEST}|g" -e "s|\\\${SCANNER_MEM_LIMIT:-4Gi}|${SCANNER_MEM_LIMIT}|g" -e "s|\\\${SCANNER_PARALLEL:-4}|${SCANNER_PARALLEL}|g" -e "s|\\\${ARTIFACT_WAIT:-300}|${ARTIFACT_WAIT}|g" "$JOB_TEMPLATE" > "$RENDERED_JOB"
+    sed -e "s|\\\${SCANNER_IMAGE}|${SCANNER_IMAGE}|g" -e "s|\\\${NAMESPACE}|${NAMESPACE}|g" -e "s|\\\${JOB_NAME}|${JOB_NAME}|g" -e "s|\\\${NAMESPACE_FILTER_ARG}|${NAMESPACE_FILTER_ARG}|g" -e "s|\\\${COMPONENT_FILTER_ARG}|${COMPONENT_FILTER_ARG}|g" -e "s|\\\${LIMIT_IPS_ARG}|${LIMIT_IPS_ARG}|g" -e "s|\\\${STARTTLS_PORTS_ARG}|${STARTTLS_PORTS_ARG}|g" -e "s|\\\${SCANNER_CPU_REQUEST:-500m}|${SCANNER_CPU_REQUEST}|g" -e "s|\\\${SCANNER_CPU_LIMIT:-4}|${SCANNER_CPU_LIMIT}|g" -e "s|\\\${SCANNER_MEM_REQUEST:-4Gi}|${SCANNER_MEM_REQUEST}|g" -e "s|\\\${SCANNER_MEM_LIMIT:-4Gi}|${SCANNER_MEM_LIMIT}|g" -e "s|\\\${SCANNER_PARALLEL:-4}|${SCANNER_PARALLEL}|g" -e "s|\\\${ARTIFACT_WAIT:-300}|${ARTIFACT_WAIT}|g" "$JOB_TEMPLATE" > "$RENDERED_JOB"
     check_error "Rendering Job manifest"
 
     echo "--> Validating rendered Job manifest (server-side dry-run)..."
@@ -780,6 +787,7 @@ cleanup() {
 # --- Main Logic ---
 
 NAMESPACE_FILTER="${NAMESPACE_FILTER:-}"
+COMPONENT_FILTER="${COMPONENT_FILTER:-}"
 VERBOSE=false
 POSITIONAL_ARGS=()
 
@@ -787,6 +795,11 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     -n|--namespace-filter)
       NAMESPACE_FILTER="$2"
+      shift
+      shift
+      ;;
+    -c|--component-filter)
+      COMPONENT_FILTER="$2"
       shift
       shift
       ;;
