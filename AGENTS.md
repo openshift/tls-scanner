@@ -32,6 +32,7 @@ make coverage     # Test coverage report
 - Discovery before scan: ports found from pod spec + `/proc/net/tcp`, then filtered (localhost-only, health probes) before the TLS batch.
 - Policy engine (`internal/scanner/policy.go` + `policy.yaml`): maps components to TLS profile expectations (ingress, apiserver, kubelet, default). Embedded at build time.
 - Scan statuses: `OK`, `NO_TLS`, `LOCALHOST_ONLY`, `NO_PORTS`, `PROBE_PORT` (see `internal/scanner/types.go`).
+- `NO_TLS` fails PQC checks and is evaluated against the component TLS profile; strict profile enforcement honors explicit policy exemptions.
 - Vendor directory is committed. Run `go mod vendor` after dependency changes.
 
 ## CI (openshift/release)

@@ -9,7 +9,7 @@ import (
 type PortFilter func(status ScanStatus) bool
 
 var SkipUnscannable PortFilter = func(status ScanStatus) bool {
-	return status == StatusNoPorts || status == StatusLocalhostOnly || status == StatusNoTLS || status == StatusProbePort
+	return status == StatusNoPorts || status == StatusLocalhostOnly || status == StatusProbePort
 }
 
 var (
@@ -94,6 +94,11 @@ func HasPQCComplianceFailures(results ScanResults, skip PortFilter) bool {
 		for _, portResult := range ipResult.PortResults {
 			if skip != nil && skip(portResult.Status) {
 				continue
+			}
+
+			if portResult.Status == StatusNoTLS {
+				slog.Warn("PQC compliance failure: no TLS detected", "ip", ipResult.IP, "port", portResult.Port)
+				return true
 			}
 
 			if !portResult.TLS13Supported {

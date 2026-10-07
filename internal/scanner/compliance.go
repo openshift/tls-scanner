@@ -54,7 +54,7 @@ func evaluateCompliance(scannedMinVer int, scannedCiphers []string, input profil
 	if input.minTLSVersion != "" {
 		input.result.Version = scannedMinVer >= TLSVersionValueMap[input.minTLSVersion]
 	} else {
-		input.result.Version = true
+		input.result.Version = scannedMinVer > 0
 	}
 	input.result.Ciphers = checkCipherCompliance(scannedCiphers, input.expectedCiphers)
 }

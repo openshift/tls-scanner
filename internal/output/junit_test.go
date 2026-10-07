@@ -157,7 +157,6 @@ func TestWriteJUnitOutputSkippableStatuses(t *testing.T) {
 			PortResults: []scanner.PortResult{
 				{Port: 1, Status: scanner.StatusNoPorts},
 				{Port: 2, Status: scanner.StatusLocalhostOnly},
-				{Port: 3, Status: scanner.StatusNoTLS},
 				{Port: 4, Status: scanner.StatusProbePort},
 			},
 		}},
@@ -172,16 +171,8 @@ func TestWriteJUnitOutputSkippableStatuses(t *testing.T) {
 	if suite.Failures != 0 {
 		t.Errorf("Failures = %d, want 0 for skippable statuses", suite.Failures)
 	}
-	// No-port, localhost-only, and probe-port entries have no external TLS
-	// surface and emit no testcase; the NO_TLS port is reported as skipped.
-	if suite.Tests != 1 {
-		t.Errorf("Tests = %d, want 1", suite.Tests)
-	}
-	if suite.Skipped != 1 {
-		t.Errorf("Skipped = %d, want 1", suite.Skipped)
-	}
-	if suite.TestCases[0].Skipped == nil {
-		t.Error("expected NO_TLS endpoint to be reported as skipped")
+	if suite.Tests != 0 || suite.Skipped != 0 {
+		t.Fatalf("excluded statuses should emit no testcases: %+v", suite)
 	}
 }
 
@@ -334,36 +325,51 @@ func TestWriteJUnitOutputAggregatesReplicas(t *testing.T) {
 	}
 }
 
-func TestWriteJUnitOutputSkipsUnreachableWorkload(t *testing.T) {
+func TestWriteJUnitOutputNoTLS(t *testing.T) {
 	t.Parallel()
-
-	// Every replica unreachable for a TLS handshake (e.g. NetworkPolicy
-	// blocks the scanner): the testcase must be skipped, not passed.
-	results := strictScanResults(scanner.IPResult{
-		IP:     "10.129.2.7",
-		Status: "scanned",
-		Pod:    deploymentPodInfo("networking-console-plugin", "54fdc79fd7", "vvs2b", "openshift-network-console"),
-		PortResults: []scanner.PortResult{{
-			Port:   9443,
-			Status: scanner.StatusNoTLS,
-			Reason: "Port open but no TLS detected",
-		}},
-	})
-
-	path := filepath.Join(t.TempDir(), "unreachable.xml")
-	if err := WriteJUnitOutput(results, path, false); err != nil {
-		t.Fatalf("WriteJUnitOutput returned error: %v", err)
-	}
-
-	suite := readJUnitSuite(t, path)
-	if suite.Tests != 1 || suite.Skipped != 1 || suite.Failures != 0 {
-		t.Fatalf("Tests/Skipped/Failures = %d/%d/%d, want 1/1/0", suite.Tests, suite.Skipped, suite.Failures)
-	}
-	if suite.TestCases[0].Skipped == nil {
-		t.Fatal("expected skipped element on unreachable workload")
-	}
-	if !strings.Contains(suite.TestCases[0].Skipped.Message, "no TLS detected") {
-		t.Errorf("skip message should carry the reason, got %q", suite.TestCases[0].Skipped.Message)
+	for _, tc := range []struct {
+		name                             string
+		pqc, strict, exempt, wantFailure bool
+	}{
+		{"PQC", true, false, false, true},
+		{"strict", false, true, false, true},
+		{"legacy", false, false, false, false},
+		{"exempt", false, true, true, false},
+		{"PQC exempt", true, true, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			results := strictScanResults(scanner.IPResult{IP: "10.0.0.1", PortResults: []scanner.PortResult{{Port: 8080, Status: scanner.StatusNoTLS, Reason: "Port open but no TLS detected"}}})
+			if !tc.strict {
+				results.TLSSecurityConfig.TLSAdherence = ""
+			}
+			component := scanner.GenericComponent
+			if tc.exempt {
+				component = scanner.ExemptComponent
+			}
+			scanner.CheckCompliance(&results.IPResults[0].PortResults[0], results.TLSSecurityConfig, component)
+			path := filepath.Join(t.TempDir(), "no-tls.xml")
+			if err := WriteJUnitOutput(results, path, tc.pqc); err != nil {
+				t.Fatal(err)
+			}
+			suite := readJUnitSuite(t, path)
+			if suite.Tests != 1 {
+				t.Fatalf("expected one testcase: %+v", suite)
+			}
+			failure := suite.TestCases[0].Failure
+			if (failure != nil) != tc.wantFailure {
+				t.Fatalf("failure = %+v, want failure %v", failure, tc.wantFailure)
+			}
+			if tc.wantFailure {
+				if suite.Failures != 1 || suite.Skipped != 0 {
+					t.Fatalf("wrong counts: %+v", suite)
+				}
+				if !strings.Contains(strings.ToLower(failure.Content), "no tls detected") {
+					t.Fatalf("missing reason: %+v", failure)
+				}
+			} else if suite.Skipped != 1 {
+				t.Fatalf("expected informational skip: %+v", suite)
+			}
+		})
 	}
 }
 

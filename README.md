@@ -133,7 +133,7 @@ IP,Port,Protocol,Service,Pod Name,Namespace,...,Status,Reason,Listen Address
 
 2. **FILTERED ports**: The scanner couldn't reach these ports due to network policies, firewall rules, or the service not listening on the pod IP. Review network policies if you need to scan these.
 
-3. **NO_TLS ports**: These ports are open but don't use TLS. This may be expected (e.g., health check endpoints, plaintext metrics) or may indicate a security concern depending on the data transmitted.
+3. **NO_TLS ports**: No TLS was detected. These ports fail `--pqc-check`. TLS-profile checks evaluate them against the selected policy profile and fail under `StrictAllComponents` (including `--tls-profile-type`); explicit `exempt` profile rules remain honored. Legacy/non-enforced profile scans remain informational. Health-probe-only ports are reported as `PROBE_PORT` instead and remain excluded.
 
 4. **MTLS_REQUIRED ports**: Common for etcd (ports 2379/2380) and other services requiring mutual TLS. The scanner can't complete the handshake without a client certificate.
 

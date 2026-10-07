@@ -253,3 +253,24 @@ func TestInvalidFlags(t *testing.T) {
 		t.Errorf("expected exit 2 for bad flags, got %d", code)
 	}
 }
+
+func TestNoTLSExitCode(t *testing.T) {
+	testutil.InstallMockTestSSL(t)
+	t.Setenv("MOCK_NO_TLS", "1")
+	for _, tc := range []struct {
+		name  string
+		flags []string
+		want  int
+	}{
+		{"PQC", []string{"--pqc-check"}, 1},
+		{"strict profile", []string{"--tls-profile-type", "Modern"}, 1},
+		{"informational", nil, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := []string{"--targets", "10.0.0.1:8080", "--artifact-dir", t.TempDir()}
+			if got := run(append(args, tc.flags...)); got != tc.want {
+				t.Fatalf("exit = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

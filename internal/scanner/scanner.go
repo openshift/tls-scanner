@@ -489,13 +489,16 @@ func scanBatchGroup(jobs []ScanJob, concurrentScans int, starttls string, client
 		if len(portResult.TlsVersions) > 0 || len(portResult.TlsCiphers) > 0 {
 			portResult.Status = StatusOK
 			portResult.Reason = "TLS scan successful"
-			if tlsConfig != nil && policy != nil {
-				componentType := policy.Resolve(job.Pod.Namespace, processName, componentName, job.Port)
-				CheckCompliance(&portResult, tlsConfig, componentType)
-			}
 		} else {
 			portResult.Status = StatusNoTLS
 			portResult.Reason = "Port open but no TLS detected"
+		}
+
+		// Evaluate NO_TLS too: absent TLS cannot satisfy a TLS profile.
+		// Resolve policy first so explicit profile exemptions still apply.
+		if tlsConfig != nil && policy != nil {
+			componentType := policy.Resolve(job.Pod.Namespace, processName, componentName, job.Port)
+			CheckCompliance(&portResult, tlsConfig, componentType)
 		}
 
 		results = append(results, portScanResult{
