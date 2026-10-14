@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
@@ -24,13 +24,13 @@ const (
 	procDiscoveryShell = `cat /proc/net/tcp /proc/net/tcp6 2>/dev/null; printf '\n` + inodeMapSentinel + `\n'; for p in /proc/[0-9]*; do [ -f "$p/comm" ] || continue; comm=$(cat "$p/comm" 2>/dev/null) || continue; for fd in "$p"/fd/*; do target=$(readlink "$fd" 2>/dev/null) || continue; case "$target" in socket:\[*) inode=${target#socket:[}; inode=${inode%]}; echo "$inode $comm";; esac; done; done`
 )
 
-func DiscoverPortsFromPodSpec(pod *v1.Pod) ([]int, error) {
+func DiscoverPortsFromPodSpec(pod *corev1.Pod) ([]int, error) {
 	slog.Debug("discovering ports from API server", "namespace", pod.Namespace, "pod", pod.Name)
 
 	var ports []int
 	for _, container := range pod.Spec.Containers {
 		for _, port := range container.Ports {
-			if port.Protocol == v1.ProtocolTCP {
+			if port.Protocol == corev1.ProtocolTCP {
 				ports = append(ports, int(port.ContainerPort))
 			}
 		}
@@ -38,7 +38,7 @@ func DiscoverPortsFromPodSpec(pod *v1.Pod) ([]int, error) {
 
 	for _, container := range pod.Spec.InitContainers {
 		for _, port := range container.Ports {
-			if port.Protocol == v1.ProtocolTCP {
+			if port.Protocol == corev1.ProtocolTCP {
 				ports = append(ports, int(port.ContainerPort))
 			}
 		}
@@ -56,14 +56,14 @@ func DiscoverPortsFromPodSpec(pod *v1.Pod) ([]int, error) {
 // DiscoverPortsFromSecondaryContainers returns TCP ports from containers other than execContainer.
 //
 // TODO(refactor): extract shared tcpPortsFromContainers helper; drop never-used error return from DiscoverPortsFromPodSpec
-func DiscoverPortsFromSecondaryContainers(pod *v1.Pod, execContainer string) []int {
+func DiscoverPortsFromSecondaryContainers(pod *corev1.Pod, execContainer string) []int {
 	var ports []int
 	for _, container := range pod.Spec.Containers {
 		if container.Name == execContainer {
 			continue
 		}
 		for _, port := range container.Ports {
-			if port.Protocol == v1.ProtocolTCP {
+			if port.Protocol == corev1.ProtocolTCP {
 				ports = append(ports, int(port.ContainerPort))
 			}
 		}
@@ -89,7 +89,7 @@ func (c *Client) DiscoverPortsFromProc(pod PodInfo) ([]int, error) {
 		Namespace(pod.Namespace).
 		SubResource("exec")
 
-	req.VersionedParams(&v1.PodExecOptions{
+	req.VersionedParams(&corev1.PodExecOptions{
 		Container: containerName,
 		Command:   command,
 		Stdin:     false,
@@ -266,14 +266,14 @@ func decodeProcNetAddr(hexAddr string) string {
 //
 // Port references that use named ports (e.g. "healthz") are resolved against
 // each container's declared Ports list.
-func GetPlaintextProbePorts(pod *v1.Pod) map[int]bool {
+func GetPlaintextProbePorts(pod *corev1.Pod) map[int]bool {
 	result := make(map[int]bool)
 
 	allContainers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
 	for _, container := range allContainers {
 		namedPorts := buildNamedPortMap(container.Ports)
 
-		for _, probe := range []*v1.Probe{
+		for _, probe := range []*corev1.Probe{
 			container.LivenessProbe,
 			container.ReadinessProbe,
 			container.StartupProbe,
@@ -283,7 +283,7 @@ func GetPlaintextProbePorts(pod *v1.Pod) map[int]bool {
 			}
 			switch {
 			case probe.HTTPGet != nil:
-				if probe.HTTPGet.Scheme == v1.URISchemeHTTPS {
+				if probe.HTTPGet.Scheme == corev1.URISchemeHTTPS {
 					// HTTPS probe — TLS is explicitly in use; keep scanning this port.
 					continue
 				}
@@ -304,7 +304,7 @@ func GetPlaintextProbePorts(pod *v1.Pod) map[int]bool {
 }
 
 // buildNamedPortMap returns a name → port number map from a container's port list.
-func buildNamedPortMap(ports []v1.ContainerPort) map[string]int {
+func buildNamedPortMap(ports []corev1.ContainerPort) map[string]int {
 	m := make(map[string]int, len(ports))
 	for _, p := range ports {
 		if p.Name != "" {
