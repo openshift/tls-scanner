@@ -47,9 +47,9 @@ func podOwnershipKey(pod PodInfo) string {
 }
 
 // GetOwnedPorts returns the set of ports whose listening process was resolved
-// specifically within pod's own PID namespace (i.e. genuinely running in one
-// of the pod's own containers), as observed by a prior DiscoverPortsFromProc
-// call for this exact pod.
+// within the discovery container's PID namespace, restricted to its cgroup
+// for hostPID pods, as observed by a prior DiscoverPortsFromProc call for
+// this exact pod. Secondary-container declared ports are handled separately.
 //
 // This is intentionally NOT an IP-based lookup: for hostNetwork pods, many
 // unrelated pods on the same node report the same IP, so keying by IP alone
