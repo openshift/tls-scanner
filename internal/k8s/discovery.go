@@ -21,7 +21,27 @@ const (
 	procStateListen    = "0A"
 	podExecTimeout     = 30 * time.Second
 	inodeMapSentinel   = "__INODE_MAP__"
-	procDiscoveryShell = `cat /proc/net/tcp /proc/net/tcp6 2>/dev/null; printf '\n` + inodeMapSentinel + `\n'; for p in /proc/[0-9]*; do [ -f "$p/comm" ] || continue; comm=$(cat "$p/comm" 2>/dev/null) || continue; for fd in "$p"/fd/*; do target=$(readlink "$fd" 2>/dev/null) || continue; case "$target" in socket:\[*) inode=${target#socket:[}; inode=${inode%]}; echo "$inode $comm";; esac; done; done`
+	procDiscoveryShell = `
+if [ "$1" = true ]; then
+    own_cgroup=$(cat /proc/self/cgroup 2>/dev/null) || exit 1
+    [ -n "$own_cgroup" ] || exit 1
+fi
+cat /proc/net/tcp /proc/net/tcp6 2>/dev/null
+printf '\n` + inodeMapSentinel + `\n'
+for p in /proc/[0-9]*; do
+    [ -f "$p/comm" ] || continue
+    if [ "$1" = true ]; then
+        process_cgroup=$(cat "$p/cgroup" 2>/dev/null) || continue
+        [ "$process_cgroup" = "$own_cgroup" ] || continue
+    fi
+    comm=$(cat "$p/comm" 2>/dev/null) || continue
+    for fd in "$p"/fd/*; do
+        target=$(readlink "$fd" 2>/dev/null) || continue
+        case "$target" in
+            socket:\[*) inode=${target#socket:[}; inode=${inode%]}; echo "$inode $comm";;
+        esac
+    done
+done`
 )
 
 func DiscoverPortsFromPodSpec(pod *v1.Pod) ([]int, error) {
@@ -80,7 +100,11 @@ func (c *Client) DiscoverPortsFromProc(pod PodInfo) ([]int, error) {
 	// ALL containers in a pod. Reading from Containers[0] gives complete
 	// visibility into every listening socket. Process names are resolved via
 	// socket inodes visible in Containers[0]'s PID namespace.
-	command := []string{"/bin/sh", "-c", procDiscoveryShell}
+	// A hostPID pod can see unrelated node processes. Only resolve inodes
+	// from the exec container's cgroup in that case. Declared ports from
+	// secondary containers are retained by the scanner's existing fallback.
+	hostPID := pod.Pod != nil && pod.Pod.Spec.HostPID
+	command := []string{"/bin/sh", "-c", procDiscoveryShell, "tls-scanner-proc", strconv.FormatBool(hostPID)}
 	containerName := pod.Containers[0]
 
 	req := c.clientset.CoreV1().RESTClient().Post().

@@ -795,6 +795,13 @@ func TestFilterByProcessPorts(t *testing.T) {
 		want       []int
 	}{
 		{
+			name:       "hostPID PTP retains declared proxy and excludes unrelated node services",
+			ownedPorts: map[int]bool{9101: true},
+			procPorts:  []int{8443, 9001, 9101, 9103, 9104, 9105, 9108},
+			specPorts:  []int{8443},
+			want:       []int{8443, 9101},
+		},
+		{
 			name:       "keeps process-mapped ports",
 			ownedPorts: map[int]bool{9091: true, 9043: true},
 			procPorts:  []int{9091, 9043, 6443, 10257},
