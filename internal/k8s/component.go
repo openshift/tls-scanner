@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -26,7 +26,7 @@ func (c *Client) GetOpenshiftComponentFromImage(image string) (*OpenshiftCompone
 // GetOpenshiftComponentFromPod extracts component information from a pod,
 // preferring pod labels for the component name but using image metadata for
 // source location and maintainer information.
-func (c *Client) GetOpenshiftComponentFromPod(pod v1.Pod) (*OpenshiftComponent, error) {
+func (c *Client) GetOpenshiftComponentFromPod(pod corev1.Pod) (*OpenshiftComponent, error) {
 	if len(pod.Spec.Containers) == 0 {
 		return nil, fmt.Errorf("pod has no containers")
 	}
@@ -162,7 +162,7 @@ func (c *Client) extractRegistryFromImage(image string) string {
 //  3. label named 'app.kubernetes.io/name'
 //  4. container.Name
 //  5. name determined from container.Image
-func (c *Client) extractComponentFromPod(pod v1.Pod, container v1.Container) string {
+func (c *Client) extractComponentFromPod(pod corev1.Pod, container corev1.Container) string {
 	if component, exists := pod.Labels["app"]; exists {
 		return component
 	}
@@ -178,7 +178,7 @@ func (c *Client) extractComponentFromPod(pod v1.Pod, container v1.Container) str
 	return c.extractComponentNameFromImage(container.Image)
 }
 
-func (c *Client) extractMaintainerFromPod(pod v1.Pod) string {
+func (c *Client) extractMaintainerFromPod(pod corev1.Pod) string {
 	if strings.HasPrefix(pod.Namespace, "openshift-") {
 		return "openshift"
 	}
