@@ -11,9 +11,13 @@ cmd/tls-scanner/       Entry point, flag parsing, orchestration
 internal/k8s/          Kubernetes client, pod discovery, /proc port discovery, TLS profile extraction
 internal/scanner/      testssl.sh integration, result parsing, compliance checks, PQC readiness, policy engine
 internal/output/       JSON, CSV, JUnit, dry-run output writers
+internal/stringutil/   Small string helpers shared by the scanner
 internal/timing/       Scan timing collector
 internal/testutil/     Mock testssl.sh for unit tests
 internal/testdata/     Test fixtures
+hack/                  Developer helper scripts (tls_failure_report.py)
+deploy.sh              Build/push/deploy/cleanup driver for in-cluster scans
+scanner-job*.template  Job manifests for pod and host (MicroShift) scan modes
 ```
 
 ## Build and test
@@ -36,7 +40,7 @@ make coverage     # Test coverage report
 
 ## CI (openshift/release)
 
-Prow runs presubmits via ci-operator config at `ci-operator/config/openshift/tls-scanner/` in openshift/release. Current checks: `unit` (`make test`), `images`, optional `smoke-tls`. Periodics run full cluster scans on AWS.
+Prow runs presubmits via ci-operator config at `ci-operator/config/openshift/tls-scanner/` in openshift/release. Current checks: `unit` (`make test`), `images`, and optional `smoke-tls`. Periodics (`periodic-default-tls`, `periodic-pqc-readiness`, `periodic-tls13-adherence`) run full cluster scans on AWS; TLS 1.3 adherence also runs on GCP and Azure.
 
 ## AI code review (Qodo)
 
@@ -45,7 +49,7 @@ Prow runs presubmits via ci-operator config at `ci-operator/config/openshift/tls
 ## Conventions
 
 - Go 1.25+, `CGO_ENABLED=0` static builds
-- `log/slog` for structured logging (PR #60 migration in progress)
+- `log/slog` for structured logging (`-log-level` controls verbosity)
 - No hardcoded values -- use flags, env vars, or policy.yaml
 - Table-driven tests
 - Run `make check` before submitting PRs
