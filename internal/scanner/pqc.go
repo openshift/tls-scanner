@@ -83,6 +83,64 @@ func populateTLSReadiness(pr *PortResult) {
 	pr.TLSReadiness = readiness
 }
 
+// CountPortsByStatus tallies port results by scan status across every IP.
+func CountPortsByStatus(results ScanResults) map[ScanStatus]int {
+	counts := make(map[ScanStatus]int)
+	for _, ipResult := range results.IPResults {
+		for _, portResult := range ipResult.PortResults {
+			counts[portResult.Status]++
+		}
+	}
+	return counts
+}
+
+// PQCSummary reports how many ports were actually probed for TLS, how many
+// were skipped (and why), and how many probed ports meet each PQC criterion.
+// Skipped ports were never tested, so they are excluded from all readiness
+// counts rather than being reported as unsupported.
+type PQCSummary struct {
+	Scanned         int
+	Skipped         int
+	SkippedByStatus map[ScanStatus]int
+	TLS13Ready      int
+	MLKEMReady      int
+	PQCReady        int
+}
+
+// SummarizePQC computes a PQCSummary using the standard SkipUnscannable filter
+// so reported counts stay consistent with HasPQCComplianceFailures.
+func SummarizePQC(results ScanResults) PQCSummary {
+	summary := PQCSummary{SkippedByStatus: make(map[ScanStatus]int)}
+
+	for status, count := range CountPortsByStatus(results) {
+		if SkipUnscannable(status) {
+			summary.Skipped += count
+			summary.SkippedByStatus[status] = count
+			continue
+		}
+		summary.Scanned += count
+	}
+
+	for _, ipResult := range results.IPResults {
+		for _, portResult := range ipResult.PortResults {
+			if SkipUnscannable(portResult.Status) {
+				continue
+			}
+			if portResult.TLS13Supported {
+				summary.TLS13Ready++
+			}
+			if portResult.MLKEMSupported {
+				summary.MLKEMReady++
+			}
+			if portResult.TLS13Supported && portResult.MLKEMSupported {
+				summary.PQCReady++
+			}
+		}
+	}
+
+	return summary
+}
+
 // hasPQCComplianceFailures is an unexported convenience wrapper used by tests
 // that applies the standard SkipUnscannable filter.
 func hasPQCComplianceFailures(results ScanResults) bool {
