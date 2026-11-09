@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/openshift/tls-scanner/internal/scanner"
@@ -116,10 +117,6 @@ func PrintPQCClusterResults(results scanner.ScanResults) {
 	fmt.Printf("Scanned:   %d\n", results.ScannedIPs)
 	fmt.Printf("\n")
 
-	tls13Count := 0
-	mlkemCount := 0
-	pqcReadyCount := 0
-
 	for _, ipResult := range results.IPResults {
 		fmt.Printf("-----------------------------------------------------\n")
 		fmt.Printf("IP: %s\n", ipResult.IP)
@@ -142,11 +139,21 @@ func PrintPQCClusterResults(results scanner.ScanResults) {
 				continue
 			}
 
+			// Skipped ports were never probed for TLS; reporting them as
+			// "NOT SUPPORTED" would assert a PQC failure that was not measured.
+			if scanner.SkipUnscannable(portResult.Status) {
+				fmt.Printf("  Port %d: skipped (%s)", portResult.Port, portResult.Status)
+				if portResult.Reason != "" {
+					fmt.Printf(": %s", portResult.Reason)
+				}
+				fmt.Printf("\n")
+				continue
+			}
+
 			fmt.Printf("  Port %d:\n", portResult.Port)
 
 			if portResult.TLS13Supported {
 				fmt.Printf("    TLS 1.3:  SUPPORTED\n")
-				tls13Count++
 			} else {
 				fmt.Printf("    TLS 1.3:  NOT SUPPORTED\n")
 			}
@@ -154,13 +161,8 @@ func PrintPQCClusterResults(results scanner.ScanResults) {
 			if portResult.MLKEMSupported {
 				fmt.Printf("    ML-KEM:   SUPPORTED\n")
 				fmt.Printf("    ML-KEM KEMs: %s\n", strings.Join(portResult.MLKEMCiphers, ", "))
-				mlkemCount++
 			} else {
 				fmt.Printf("    ML-KEM:   NOT SUPPORTED\n")
-			}
-
-			if portResult.TLS13Supported && portResult.MLKEMSupported {
-				pqcReadyCount++
 			}
 
 			if len(portResult.TlsVersions) > 0 {
@@ -176,9 +178,25 @@ func PrintPQCClusterResults(results scanner.ScanResults) {
 	fmt.Printf("\n========================================\n")
 	fmt.Printf("SUMMARY\n")
 	fmt.Printf("========================================\n")
-	fmt.Printf("Total Ports Scanned: %d\n", results.ScannedIPs)
-	fmt.Printf("TLS 1.3 Ready:       %d\n", tls13Count)
-	fmt.Printf("ML-KEM Ready:        %d\n", mlkemCount)
-	fmt.Printf("Fully PQC Ready:     %d (TLS 1.3 + ML-KEM)\n", pqcReadyCount)
+	summary := scanner.SummarizePQC(results)
+	fmt.Printf("Total Ports Scanned: %d\n", summary.Scanned)
+	if summary.Skipped > 0 {
+		fmt.Printf("Ports Skipped:       %d\n", summary.Skipped)
+		statuses := make([]scanner.ScanStatus, 0, len(summary.SkippedByStatus))
+		for status := range summary.SkippedByStatus {
+			statuses = append(statuses, status)
+		}
+		slices.Sort(statuses)
+		for _, status := range statuses {
+			fmt.Printf("  %-18s %d\n", string(status)+":", summary.SkippedByStatus[status])
+		}
+	}
+	fmt.Printf("TLS 1.3 Ready:       %d\n", summary.TLS13Ready)
+	fmt.Printf("ML-KEM Ready:        %d\n", summary.MLKEMReady)
+	if summary.Scanned > 0 {
+		fmt.Printf("Fully PQC Ready:     %d (%d%% of scanned ports)\n", summary.PQCReady, summary.PQCReady*100/summary.Scanned)
+	} else {
+		fmt.Printf("Fully PQC Ready:     %d\n", summary.PQCReady)
+	}
 	fmt.Printf("========================================\n")
 }
