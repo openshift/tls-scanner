@@ -1,0 +1,291 @@
+# Fetched at run time by this repo's IntegrationTestScenario git resolver.
+# Not applied to the cluster directly. See konflux/README.md.
+#
+# End-to-end self-test for a tls-scanner Snapshot build:
+#   1) resolve the just-built image from SNAPSHOT
+#   2) smoke-check --version / --help
+#   3) deploy a short-lived TLS fixture pod in the PipelineRun namespace
+#   4) deploy the scanner Job against that namespace using in-cluster credentials
+#   5) emit standardized TEST_OUTPUT
+#
+# Requires the PipelineRun SA to create pods/jobs in its namespace and (for the
+# scanner Job) cluster-reader + pods/exec + privileged SCC on the target
+# cluster. Marked optional on the ITS while bootstrapping.
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: tls-scanner-self-test
+  labels:
+    app.kubernetes.io/name: tls-scanner-self-test
+    app.kubernetes.io/part-of: tls-scanner
+spec:
+  description: Self-test a tls-scanner Snapshot with a local TLS fixture and Job-based scan.
+  params:
+    - name: SNAPSHOT
+      description: Snapshot of the application under test, injected by Konflux.
+      type: string
+    - name: COMPONENT_NAME
+      description: Name of the tls-scanner component in SNAPSHOT.
+      type: string
+      default: tls-scanner
+  results:
+    - name: TEST_OUTPUT
+      description: Standardized Konflux test result JSON.
+      value: $(tasks.self-test.results.TEST_OUTPUT)
+  tasks:
+    - name: self-test
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: COMPONENT_NAME
+          value: $(params.COMPONENT_NAME)
+      taskSpec:
+        params:
+          - name: SNAPSHOT
+          - name: COMPONENT_NAME
+        results:
+          - name: TEST_OUTPUT
+            description: Standardized Konflux test result.
+        steps:
+          - name: run-self-test
+            image: quay.io/konflux-ci/konflux-test:stable
+            env:
+              - name: SNAPSHOT
+                value: $(params.SNAPSHOT)
+              - name: COMPONENT_NAME
+                value: $(params.COMPONENT_NAME)
+            script: |
+              #!/bin/bash
+              set -uo pipefail
+
+              write_test_output() {
+                local result="$1"
+                local note="$2"
+                local TEST_OUTPUT
+                TEST_OUTPUT=$(jq -rc -n \
+                  --arg date "$(date -u --iso-8601=seconds)" \
+                  --arg result "${result}" \
+                  --arg note "${note}" \
+                  '{result: $result, timestamp: $date, note: $note, failures: (if $result == "SUCCESS" then 0 else 1 end), successes: (if $result == "SUCCESS" then 1 else 0 end), warnings: 0}')
+                echo -n "${TEST_OUTPUT}" | tee "$(results.TEST_OUTPUT.path)"
+              }
+
+              SCANNER_IMAGE=$(jq -r --arg name "${COMPONENT_NAME}" \
+                '.components[]? | select(.name == $name) | .containerImage' \
+                <<< "${SNAPSHOT}" | head -n1)
+              if [[ -z "${SCANNER_IMAGE}" || "${SCANNER_IMAGE}" == "null" ]]; then
+                write_test_output "ERROR" "no containerImage for component ${COMPONENT_NAME} in SNAPSHOT"
+                exit 1
+              fi
+              echo "SCANNER_IMAGE=${SCANNER_IMAGE}"
+
+              # --- Smoke: image is runnable ---
+              if ! oc run tls-scanner-smoke --rm -i --restart=Never --image="${SCANNER_IMAGE}" \
+                  --command -- /usr/local/bin/tls-scanner --version; then
+                write_test_output "FAILURE" "tls-scanner --version failed in smoke pod"
+                exit 1
+              fi
+
+              # --- Fixture + Job scan using in-cluster kubeconfig ---
+              ns=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+              export ns
+              FIXTURE_NAME="tls-scanner-fixture"
+              JOB_NAME="tls-scanner-selftest-job"
+              SA_NAME="tls-scanner-selftest"
+              ARTIFACTS=/tmp/tls-scanner-artifacts
+              mkdir -p "${ARTIFACTS}"
+
+              # Build a kubeconfig from the PipelineRun SA so the compliance-style
+              # Job deploy path is exercised against this same cluster.
+              TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              APISERVER="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}"
+              kubectl config --kubeconfig=/tmp/kubeconfig set-cluster in-cluster \
+                --server="${APISERVER}" --certificate-authority="${CA}" --embed-certs=true
+              kubectl config --kubeconfig=/tmp/kubeconfig set-credentials sa --token="${TOKEN}"
+              kubectl config --kubeconfig=/tmp/kubeconfig set-context in-cluster \
+                --cluster=in-cluster --user=sa --namespace="${ns}"
+              kubectl config --kubeconfig=/tmp/kubeconfig use-context in-cluster
+              export KUBECONFIG=/tmp/kubeconfig
+
+              cleanup() {
+                oc delete pod "${FIXTURE_NAME}" -n "${ns}" --ignore-not-found=true || true
+                oc delete job "${JOB_NAME}" -n "${ns}" --ignore-not-found=true || true
+                oc delete sa "${SA_NAME}" -n "${ns}" --ignore-not-found=true || true
+                oc adm policy remove-cluster-role-from-user cluster-reader -z "${SA_NAME}" -n "${ns}" 2>/dev/null || true
+                oc adm policy remove-cluster-role-from-user tls-scanner-cross-namespace -z "${SA_NAME}" -n "${ns}" 2>/dev/null || true
+                oc adm policy remove-scc-from-user privileged -z "${SA_NAME}" -n "${ns}" 2>/dev/null || true
+              }
+              trap cleanup EXIT
+
+              # Deploy a TLS fixture (openssl s_server) listening on 8443.
+              python3 - <<'PY'
+              import json, os
+              ns = os.environ["ns"]
+              pod = {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                  "name": "tls-scanner-fixture",
+                  "namespace": ns,
+                  "labels": {"app": "tls-scanner-fixture"},
+                },
+                "spec": {
+                  "restartPolicy": "Never",
+                  "containers": [{
+                    "name": "tls",
+                    "image": "registry.access.redhat.com/ubi9/ubi-minimal:latest",
+                    "command": ["/bin/bash", "-c"],
+                    "args": [
+                      "microdnf install -y openssl >/dev/null 2>&1 || yum install -y openssl >/dev/null 2>&1 || true; "
+                      "openssl req -x509 -newkey rsa:2048 -keyout /tmp/key.pem -out /tmp/cert.pem -days 1 -nodes -subj /CN=tls-scanner-fixture; "
+                      "openssl s_server -accept 8443 -cert /tmp/cert.pem -key /tmp/key.pem -www"
+                    ],
+                    "ports": [{"containerPort": 8443, "protocol": "TCP", "name": "https"}],
+                    "readinessProbe": {
+                      "tcpSocket": {"port": 8443},
+                      "initialDelaySeconds": 5,
+                      "periodSeconds": 2,
+                    },
+                  }],
+                },
+              }
+              open("/tmp/fixture.json", "w").write(json.dumps(pod))
+              PY
+              oc apply -f /tmp/fixture.json
+              if ! oc wait --for=condition=Ready pod/"${FIXTURE_NAME}" -n "${ns}" --timeout=180s; then
+                oc describe pod "${FIXTURE_NAME}" -n "${ns}" || true
+                write_test_output "ERROR" "TLS fixture pod did not become Ready"
+                exit 1
+              fi
+
+              oc get sa "${SA_NAME}" -n "${ns}" >/dev/null 2>&1 || oc create sa "${SA_NAME}" -n "${ns}"
+              oc adm policy add-cluster-role-to-user cluster-reader -z "${SA_NAME}" -n "${ns}" || true
+              oc adm policy add-scc-to-user privileged -z "${SA_NAME}" -n "${ns}" || true
+
+              python3 - <<'PY'
+              import json
+              role = {
+                "apiVersion": "rbac.authorization.k8s.io/v1",
+                "kind": "ClusterRole",
+                "metadata": {"name": "tls-scanner-cross-namespace"},
+                "rules": [
+                  {"apiGroups": [""], "resources": ["pods/exec"], "verbs": ["create"]},
+                  {"apiGroups": ["operator.openshift.io"], "resources": ["ingresscontrollers"], "verbs": ["get", "list"]},
+                  {"apiGroups": ["machineconfiguration.openshift.io"], "resources": ["kubeletconfigs"], "verbs": ["get", "list"]},
+                ],
+              }
+              open("/tmp/tls-scanner-clusterrole.json", "w").write(json.dumps(role))
+              PY
+              oc apply -f /tmp/tls-scanner-clusterrole.json || true
+              oc adm policy add-cluster-role-to-user tls-scanner-cross-namespace -z "${SA_NAME}" -n "${ns}" || true
+
+              oc delete job "${JOB_NAME}" -n "${ns}" --ignore-not-found=true
+
+              SCANNER_IMAGE="${SCANNER_IMAGE}" ns="${ns}" JOB_NAME="${JOB_NAME}" SA_NAME="${SA_NAME}" python3 - <<'PY'
+              import json, os
+              ns = os.environ["ns"]
+              cmd = (
+                "set -uo pipefail; "
+                f"/usr/local/bin/tls-scanner --all-pods -j 2 --namespace-filter {ns} "
+                "--artifact-dir /artifacts --json-file /artifacts/results.json "
+                "--csv-file /artifacts/results.csv --junit-file /artifacts/results.xml "
+                "--log-file /artifacts/scan.log --limit-ips 5; "
+                "exit_code=$?; "
+                'echo "Scanner finished with exit code: $exit_code"; '
+                "echo -n $exit_code > /artifacts/exit_code; "
+                "sleep 90; exit 0"
+              )
+              job = {
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": {"name": os.environ["JOB_NAME"], "namespace": ns},
+                "spec": {
+                  "backoffLimit": 1,
+                  "template": {
+                    "spec": {
+                      "serviceAccountName": os.environ["SA_NAME"],
+                      "restartPolicy": "Never",
+                      "containers": [{
+                        "name": "tls-scanner",
+                        "image": os.environ["SCANNER_IMAGE"],
+                        "imagePullPolicy": "Always",
+                        "securityContext": {"privileged": True},
+                        "command": ["/bin/sh", "-c", cmd],
+                        "volumeMounts": [{"name": "artifacts", "mountPath": "/artifacts"}],
+                      }],
+                      "volumes": [{"name": "artifacts", "emptyDir": {}}],
+                    }
+                  },
+                },
+              }
+              open("/tmp/tls-scanner-job.json", "w").write(json.dumps(job))
+              PY
+              if ! oc apply -f /tmp/tls-scanner-job.json; then
+                write_test_output "ERROR" "failed to create scanner Job (RBAC?)"
+                exit 1
+              fi
+
+              POD=""
+              for i in $(seq 1 60); do
+                POD=$(oc get pods -n "${ns}" -l job-name="${JOB_NAME}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+                if [[ -n "${POD}" ]]; then
+                  phase=$(oc get pod "${POD}" -n "${ns}" -o jsonpath='{.status.phase}' 2>/dev/null || echo Unknown)
+                  if [[ "${phase}" == "Running" || "${phase}" == "Succeeded" ]]; then
+                    break
+                  fi
+                  if [[ "${phase}" == "Failed" ]]; then
+                    oc describe pod "${POD}" -n "${ns}" || true
+                    write_test_output "ERROR" "self-test scanner pod failed to start"
+                    exit 1
+                  fi
+                fi
+                sleep 5
+              done
+              if [[ -z "${POD}" ]]; then
+                write_test_output "ERROR" "self-test scanner pod was never created"
+                exit 1
+              fi
+
+              deadline=$(( $(date +%s) + 900 ))
+              while true; do
+                if oc logs "pod/${POD}" -n "${ns}" 2>/dev/null | grep -q "Scanner finished with exit code:"; then
+                  break
+                fi
+                phase=$(oc get pod "${POD}" -n "${ns}" -o jsonpath='{.status.phase}' 2>/dev/null || echo Unknown)
+                if [[ "${phase}" == "Failed" ]]; then
+                  write_test_output "ERROR" "self-test scanner pod failed during run"
+                  exit 1
+                fi
+                if [[ $(date +%s) -ge ${deadline} ]]; then
+                  write_test_output "ERROR" "timed out waiting for self-test scanner Job"
+                  exit 1
+                fi
+                sleep 10
+              done
+
+              sleep 3
+              oc cp "${ns}/${POD}:/artifacts/results.json" "${ARTIFACTS}/results.json" || true
+              oc cp "${ns}/${POD}:/artifacts/scan.log" "${ARTIFACTS}/scan.log" || true
+              oc cp "${ns}/${POD}:/artifacts/exit_code" "${ARTIFACTS}/exit_code" || echo "1" > "${ARTIFACTS}/exit_code"
+
+              echo "=== scan.log (tail) ==="
+              tail -n 80 "${ARTIFACTS}/scan.log" 2>/dev/null || true
+              if [[ -f "${ARTIFACTS}/results.json" ]]; then
+                jq '{scanned_ips, total_ports: ([.ip_results[]?.port_results[]?] | length)}' "${ARTIFACTS}/results.json" || true
+              fi
+
+              exit_code=$(cat "${ARTIFACTS}/exit_code" 2>/dev/null || echo 1)
+              if [[ ! -f "${ARTIFACTS}/results.json" ]]; then
+                write_test_output "FAILURE" "scanner produced no results.json (exit ${exit_code})"
+                exit 1
+              fi
+
+              ports=$(jq '[.ip_results[]?.port_results[]?] | length' "${ARTIFACTS}/results.json" 2>/dev/null || echo 0)
+              if [[ "${ports}" == "0" ]]; then
+                write_test_output "FAILURE" "scanner found zero ports in self-test namespace"
+                exit 1
+              fi
+
+              write_test_output "SUCCESS" "self-test scanned ${ports} port(s); smoke + fixture Job path OK"
+              exit 0

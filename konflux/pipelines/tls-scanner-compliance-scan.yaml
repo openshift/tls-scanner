@@ -1,0 +1,365 @@
+# Fetched at run time by Konflux via a layered product's IntegrationTestScenario
+# git resolver (not applied to the cluster directly). See konflux/README.md
+# "Using tls-scanner from a layered product".
+#
+# Deploys the tls-scanner Job into a target cluster (kubeconfig from
+# TARGET_KUBECONFIG_SECRET), waits for completion, collects artifacts, and emits
+# the standardized TEST_OUTPUT result the Integration Service uses for GitHub
+# PR checks.
+#
+# Pin resolverRef.revision to a release tag or known-good commit — do not track
+# main unless you intentionally want breaking pipeline changes.
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: tls-scanner-compliance-scan
+  labels:
+    app.kubernetes.io/name: tls-scanner-compliance-scan
+    app.kubernetes.io/part-of: tls-scanner
+spec:
+  description: |
+    Deploy tls-scanner as an in-cluster Job against a target environment and
+    report TLS compliance via TEST_OUTPUT. Layered products supply a kubeconfig
+    Secret for their ephemeral test cluster and optional scan filters.
+  params:
+    - name: SNAPSHOT
+      description: Snapshot of the application under test, injected by Konflux.
+      type: string
+      default: '{"components":[]}'
+    - name: COMPONENT_NAME
+      description: Name of the tls-scanner component in SNAPSHOT when SCANNER_IMAGE is empty.
+      type: string
+      default: tls-scanner
+    - name: SCANNER_IMAGE
+      description: >
+        Full tls-scanner image reference. When empty, resolved from SNAPSHOT
+        using COMPONENT_NAME. Layered products should usually pin a released tag.
+      type: string
+      default: ""
+    - name: TARGET_KUBECONFIG_SECRET
+      description: Name of a Secret in the PipelineRun namespace holding the target kubeconfig.
+      type: string
+    - name: TARGET_KUBECONFIG_SECRET_KEY
+      description: Key within TARGET_KUBECONFIG_SECRET that contains the kubeconfig.
+      type: string
+      default: kubeconfig
+    - name: SCAN_NAMESPACE
+      description: Namespace in the target cluster where the scanner Job is deployed.
+      type: string
+      default: tls-scanner
+    - name: NAMESPACE_FILTER
+      description: Comma-separated namespaces to scan. Empty means scan all pods.
+      type: string
+      default: ""
+    - name: PQC_CHECK
+      description: When "true", pass --pqc-check to the scanner Job.
+      type: string
+      default: "false"
+    - name: TLS_PROFILE_TYPE
+      description: Optional expected TLS profile (Old, Intermediate, Modern).
+      type: string
+      default: ""
+    - name: LIMIT_IPS
+      description: Cap number of IPs to scan (0 = no limit).
+      type: string
+      default: "0"
+    - name: SCANNER_PARALLEL
+      description: Concurrent scan workers for the Job (-j).
+      type: string
+      default: "4"
+    - name: JOB_TIMEOUT_SECONDS
+      description: Max seconds to wait for the scanner Job to finish.
+      type: string
+      default: "3600"
+  results:
+    - name: TEST_OUTPUT
+      description: Standardized Konflux test result JSON.
+      value: $(tasks.run-scan.results.TEST_OUTPUT)
+  tasks:
+    - name: resolve-image
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: COMPONENT_NAME
+          value: $(params.COMPONENT_NAME)
+        - name: SCANNER_IMAGE
+          value: $(params.SCANNER_IMAGE)
+      taskSpec:
+        params:
+          - name: SNAPSHOT
+          - name: COMPONENT_NAME
+          - name: SCANNER_IMAGE
+        results:
+          - name: SCANNER_IMAGE
+            description: Resolved tls-scanner container image.
+        steps:
+          - name: resolve
+            image: quay.io/konflux-ci/konflux-test:stable
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              override="$(params.SCANNER_IMAGE)"
+              if [[ -n "${override}" ]]; then
+                echo -n "${override}" | tee "$(results.SCANNER_IMAGE.path)"
+                exit 0
+              fi
+              image=$(jq -r --arg name "$(params.COMPONENT_NAME)" \
+                '.components[]? | select(.name == $name) | .containerImage' \
+                <<< "$(params.SNAPSHOT)" | head -n1)
+              if [[ -z "${image}" || "${image}" == "null" ]]; then
+                echo "SCANNER_IMAGE empty and no containerImage for component $(params.COMPONENT_NAME) in SNAPSHOT" >&2
+                exit 1
+              fi
+              echo -n "${image}" | tee "$(results.SCANNER_IMAGE.path)"
+
+    - name: run-scan
+      runAfter:
+        - resolve-image
+      params:
+        - name: SCANNER_IMAGE
+          value: $(tasks.resolve-image.results.SCANNER_IMAGE)
+        - name: TARGET_KUBECONFIG_SECRET
+          value: $(params.TARGET_KUBECONFIG_SECRET)
+        - name: TARGET_KUBECONFIG_SECRET_KEY
+          value: $(params.TARGET_KUBECONFIG_SECRET_KEY)
+        - name: SCAN_NAMESPACE
+          value: $(params.SCAN_NAMESPACE)
+        - name: NAMESPACE_FILTER
+          value: $(params.NAMESPACE_FILTER)
+        - name: PQC_CHECK
+          value: $(params.PQC_CHECK)
+        - name: TLS_PROFILE_TYPE
+          value: $(params.TLS_PROFILE_TYPE)
+        - name: LIMIT_IPS
+          value: $(params.LIMIT_IPS)
+        - name: SCANNER_PARALLEL
+          value: $(params.SCANNER_PARALLEL)
+        - name: JOB_TIMEOUT_SECONDS
+          value: $(params.JOB_TIMEOUT_SECONDS)
+      taskSpec:
+        params:
+          - name: SCANNER_IMAGE
+          - name: TARGET_KUBECONFIG_SECRET
+          - name: TARGET_KUBECONFIG_SECRET_KEY
+          - name: SCAN_NAMESPACE
+          - name: NAMESPACE_FILTER
+          - name: PQC_CHECK
+          - name: TLS_PROFILE_TYPE
+          - name: LIMIT_IPS
+          - name: SCANNER_PARALLEL
+          - name: JOB_TIMEOUT_SECONDS
+        results:
+          - name: TEST_OUTPUT
+            description: Standardized Konflux test result.
+        steps:
+          - name: deploy-wait-collect
+            image: quay.io/konflux-ci/konflux-test:stable
+            env:
+              - name: SCANNER_IMAGE
+                value: $(params.SCANNER_IMAGE)
+              - name: TARGET_KUBECONFIG_SECRET
+                value: $(params.TARGET_KUBECONFIG_SECRET)
+              - name: TARGET_KUBECONFIG_SECRET_KEY
+                value: $(params.TARGET_KUBECONFIG_SECRET_KEY)
+              - name: SCAN_NAMESPACE
+                value: $(params.SCAN_NAMESPACE)
+              - name: NAMESPACE_FILTER
+                value: $(params.NAMESPACE_FILTER)
+              - name: PQC_CHECK
+                value: $(params.PQC_CHECK)
+              - name: TLS_PROFILE_TYPE
+                value: $(params.TLS_PROFILE_TYPE)
+              - name: LIMIT_IPS
+                value: $(params.LIMIT_IPS)
+              - name: SCANNER_PARALLEL
+                value: $(params.SCANNER_PARALLEL)
+              - name: JOB_TIMEOUT_SECONDS
+                value: $(params.JOB_TIMEOUT_SECONDS)
+            script: |
+              #!/bin/bash
+              set -uo pipefail
+
+              write_test_output() {
+                local result="$1"
+                local note="$2"
+                local TEST_OUTPUT
+                TEST_OUTPUT=$(jq -rc -n \
+                  --arg date "$(date -u --iso-8601=seconds)" \
+                  --arg result "${result}" \
+                  --arg note "${note}" \
+                  '{result: $result, timestamp: $date, note: $note, failures: (if $result == "SUCCESS" then 0 else 1 end), successes: (if $result == "SUCCESS" then 1 else 0 end), warnings: 0}')
+                echo -n "${TEST_OUTPUT}" | tee "$(results.TEST_OUTPUT.path)"
+              }
+
+              ARTIFACTS=/tmp/tls-scanner-artifacts
+              mkdir -p "${ARTIFACTS}"
+
+              ns="${NAMESPACE:-$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)}"
+              if ! oc get secret "${TARGET_KUBECONFIG_SECRET}" -n "${ns}" \
+                  -o "jsonpath={.data.${TARGET_KUBECONFIG_SECRET_KEY}}" | base64 -d > /tmp/kubeconfig; then
+                write_test_output "ERROR" "failed to read kubeconfig secret ${TARGET_KUBECONFIG_SECRET}"
+                exit 1
+              fi
+              export KUBECONFIG=/tmp/kubeconfig
+              chmod 600 "${KUBECONFIG}"
+
+              JOB_NAME="tls-scanner-job"
+              SA_NAME="tls-scanner"
+
+              cleanup() {
+                oc delete job "${JOB_NAME}" -n "${SCAN_NAMESPACE}" --ignore-not-found=true || true
+                oc adm policy remove-cluster-role-from-user cluster-reader -z "${SA_NAME}" -n "${SCAN_NAMESPACE}" 2>/dev/null || true
+                oc adm policy remove-cluster-role-from-user tls-scanner-cross-namespace -z "${SA_NAME}" -n "${SCAN_NAMESPACE}" 2>/dev/null || true
+                oc adm policy remove-scc-from-user privileged -z "${SA_NAME}" -n "${SCAN_NAMESPACE}" 2>/dev/null || true
+              }
+              trap cleanup EXIT
+
+              oc get ns "${SCAN_NAMESPACE}" >/dev/null 2>&1 || oc create ns "${SCAN_NAMESPACE}"
+              oc get sa "${SA_NAME}" -n "${SCAN_NAMESPACE}" >/dev/null 2>&1 || oc create sa "${SA_NAME}" -n "${SCAN_NAMESPACE}"
+              oc adm policy add-cluster-role-to-user cluster-reader -z "${SA_NAME}" -n "${SCAN_NAMESPACE}"
+              oc adm policy add-scc-to-user privileged -z "${SA_NAME}" -n "${SCAN_NAMESPACE}" || true
+
+              python3 - <<'PY'
+              import json
+              role = {
+                "apiVersion": "rbac.authorization.k8s.io/v1",
+                "kind": "ClusterRole",
+                "metadata": {"name": "tls-scanner-cross-namespace"},
+                "rules": [
+                  {"apiGroups": [""], "resources": ["pods/exec"], "verbs": ["create"]},
+                  {"apiGroups": ["operator.openshift.io"], "resources": ["ingresscontrollers"], "verbs": ["get", "list"]},
+                  {"apiGroups": ["machineconfiguration.openshift.io"], "resources": ["kubeletconfigs"], "verbs": ["get", "list"]},
+                ],
+              }
+              open("/tmp/tls-scanner-clusterrole.json", "w").write(json.dumps(role))
+              PY
+              oc apply -f /tmp/tls-scanner-clusterrole.json
+              oc adm policy add-cluster-role-to-user tls-scanner-cross-namespace -z "${SA_NAME}" -n "${SCAN_NAMESPACE}"
+
+              EXTRA_ARGS=""
+              if [[ -n "${NAMESPACE_FILTER}" ]]; then
+                EXTRA_ARGS+=" --namespace-filter $(echo "${NAMESPACE_FILTER}" | tr -d ' ')"
+              fi
+              if [[ "${PQC_CHECK}" == "true" ]]; then
+                EXTRA_ARGS+=" --pqc-check"
+              fi
+              if [[ -n "${TLS_PROFILE_TYPE}" ]]; then
+                EXTRA_ARGS+=" --tls-profile-type ${TLS_PROFILE_TYPE}"
+              fi
+              if [[ "${LIMIT_IPS}" != "0" && -n "${LIMIT_IPS}" ]]; then
+                EXTRA_ARGS+=" --limit-ips ${LIMIT_IPS}"
+              fi
+
+              oc delete job "${JOB_NAME}" -n "${SCAN_NAMESPACE}" --ignore-not-found=true
+
+              SCANNER_IMAGE="${SCANNER_IMAGE}" SCAN_NAMESPACE="${SCAN_NAMESPACE}" \
+              JOB_NAME="${JOB_NAME}" SA_NAME="${SA_NAME}" SCANNER_PARALLEL="${SCANNER_PARALLEL}" \
+              EXTRA_ARGS="${EXTRA_ARGS}" python3 - <<'PY'
+              import json, os
+              extra = os.environ.get("EXTRA_ARGS", "").strip()
+              cmd = (
+                "set -uo pipefail; "
+                f"/usr/local/bin/tls-scanner --all-pods -j {os.environ['SCANNER_PARALLEL']} "
+                "--artifact-dir /artifacts --json-file /artifacts/results.json "
+                "--csv-file /artifacts/results.csv --junit-file /artifacts/results.xml "
+                f"--log-file /artifacts/scan.log {extra}; "
+                "exit_code=$?; "
+                'echo "Scanner finished with exit code: $exit_code"; '
+                "echo -n $exit_code > /artifacts/exit_code; "
+                "sleep 120; exit 0"
+              )
+              job = {
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": {
+                  "name": os.environ["JOB_NAME"],
+                  "namespace": os.environ["SCAN_NAMESPACE"],
+                },
+                "spec": {
+                  "backoffLimit": 1,
+                  "template": {
+                    "spec": {
+                      "serviceAccountName": os.environ["SA_NAME"],
+                      "restartPolicy": "Never",
+                      "containers": [{
+                        "name": "tls-scanner",
+                        "image": os.environ["SCANNER_IMAGE"],
+                        "imagePullPolicy": "Always",
+                        "securityContext": {"privileged": True},
+                        "command": ["/bin/sh", "-c", cmd],
+                        "volumeMounts": [{"name": "artifacts", "mountPath": "/artifacts"}],
+                      }],
+                      "volumes": [{"name": "artifacts", "emptyDir": {}}],
+                    }
+                  },
+                },
+              }
+              open("/tmp/tls-scanner-job.json", "w").write(json.dumps(job))
+              PY
+              oc apply -f /tmp/tls-scanner-job.json
+
+              echo "Waiting for scanner pod..."
+              POD=""
+              for i in $(seq 1 60); do
+                POD=$(oc get pods -n "${SCAN_NAMESPACE}" -l job-name="${JOB_NAME}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+                if [[ -n "${POD}" ]]; then
+                  phase=$(oc get pod "${POD}" -n "${SCAN_NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo Unknown)
+                  if [[ "${phase}" == "Running" || "${phase}" == "Succeeded" ]]; then
+                    break
+                  fi
+                  if [[ "${phase}" == "Failed" ]]; then
+                    oc describe pod "${POD}" -n "${SCAN_NAMESPACE}" || true
+                    write_test_output "ERROR" "scanner pod failed to start"
+                    exit 1
+                  fi
+                fi
+                sleep 5
+              done
+              if [[ -z "${POD}" ]]; then
+                write_test_output "ERROR" "scanner pod was never created"
+                exit 1
+              fi
+
+              echo "Waiting for scanner to finish (timeout ${JOB_TIMEOUT_SECONDS}s)..."
+              deadline=$(( $(date +%s) + JOB_TIMEOUT_SECONDS ))
+              while true; do
+                if oc logs "pod/${POD}" -n "${SCAN_NAMESPACE}" 2>/dev/null | grep -q "Scanner finished with exit code:"; then
+                  break
+                fi
+                phase=$(oc get pod "${POD}" -n "${SCAN_NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo Unknown)
+                if [[ "${phase}" == "Failed" ]]; then
+                  write_test_output "ERROR" "scanner pod failed during run"
+                  exit 1
+                fi
+                if [[ $(date +%s) -ge ${deadline} ]]; then
+                  write_test_output "ERROR" "timed out waiting for scanner Job"
+                  exit 1
+                fi
+                sleep 10
+              done
+
+              sleep 3
+              oc cp "${SCAN_NAMESPACE}/${POD}:/artifacts/results.json" "${ARTIFACTS}/results.json" || true
+              oc cp "${SCAN_NAMESPACE}/${POD}:/artifacts/results.csv" "${ARTIFACTS}/results.csv" || true
+              oc cp "${SCAN_NAMESPACE}/${POD}:/artifacts/results.xml" "${ARTIFACTS}/results.xml" || true
+              oc cp "${SCAN_NAMESPACE}/${POD}:/artifacts/scan.log" "${ARTIFACTS}/scan.log" || true
+              oc cp "${SCAN_NAMESPACE}/${POD}:/artifacts/exit_code" "${ARTIFACTS}/exit_code" || echo "1" > "${ARTIFACTS}/exit_code"
+
+              echo "=== scan.log (tail) ==="
+              tail -n 100 "${ARTIFACTS}/scan.log" 2>/dev/null || true
+              if [[ -f "${ARTIFACTS}/results.json" ]]; then
+                echo "=== results.json summary ==="
+                jq '{scanned_ips, total_ports: ([.ip_results[]?.port_results[]?] | length)}' "${ARTIFACTS}/results.json" || true
+              fi
+
+              exit_code=$(cat "${ARTIFACTS}/exit_code" 2>/dev/null || echo 1)
+              if [[ "${exit_code}" == "0" ]]; then
+                note="tls-scanner completed successfully"
+                if [[ "${PQC_CHECK}" == "true" ]]; then
+                  note="tls-scanner --pqc-check passed"
+                fi
+                write_test_output "SUCCESS" "${note}"
+                exit 0
+              fi
+              write_test_output "FAILURE" "tls-scanner exited with code ${exit_code}"
+              exit 1

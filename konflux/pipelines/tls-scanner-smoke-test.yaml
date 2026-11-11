@@ -1,0 +1,87 @@
+# Fetched at run time by Konflux via the git resolver configured in
+# konflux/integration-test-scenario.yaml (not applied to the cluster directly).
+#
+# Phase 1 smoke test: confirms the just-built tls-scanner image is runnable by executing
+# `tls-scanner --version` and `--help` inside it, and reports the standardized TEST_OUTPUT
+# result the Integration Service uses to post the PR check.
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: tls-scanner-smoke-test
+spec:
+  params:
+    - name: SNAPSHOT
+      description: Snapshot of the application under test, injected by Konflux.
+      type: string
+    - name: COMPONENT_NAME
+      description: Name of the component under test, injected by Konflux via label.
+      type: string
+      default: tls-scanner
+  tasks:
+    - name: parse-metadata
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: COMPONENT_NAME
+          value: $(params.COMPONENT_NAME)
+      taskSpec:
+        params:
+          - name: SNAPSHOT
+          - name: COMPONENT_NAME
+        results:
+          - name: COMPONENT_IMAGE
+            description: containerImage of COMPONENT_NAME extracted from the Snapshot.
+        steps:
+          - name: extract-image
+            image: quay.io/konflux-ci/konflux-test:stable
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              image=$(jq -r --arg name "$(params.COMPONENT_NAME)" \
+                '.components[] | select(.name == $name) | .containerImage' \
+                <<< "$(params.SNAPSHOT)")
+              if [[ -z "${image}" || "${image}" == "null" ]]; then
+                echo "no containerImage found for component $(params.COMPONENT_NAME) in Snapshot" >&2
+                exit 1
+              fi
+              echo -n "${image}" | tee "$(results.COMPONENT_IMAGE.path)"
+    - name: smoke-test
+      runAfter:
+        - parse-metadata
+      params:
+        - name: COMPONENT_IMAGE
+          value: $(tasks.parse-metadata.results.COMPONENT_IMAGE)
+      taskSpec:
+        params:
+          - name: COMPONENT_IMAGE
+        results:
+          - name: TEST_OUTPUT
+            description: Standardized Konflux test result.
+        steps:
+          - name: run-scanner-smoke-test
+            image: $(params.COMPONENT_IMAGE)
+            script: |
+              #!/bin/bash
+              set -uo pipefail
+
+              result="SUCCESS"
+              note=""
+
+              if ! /usr/local/bin/tls-scanner --version; then
+                result="FAILURE"
+                note="tls-scanner --version failed"
+              fi
+
+              if ! /usr/local/bin/tls-scanner --help >/dev/null; then
+                result="FAILURE"
+                note="${note:+$note; }tls-scanner --help failed"
+              fi
+
+              TEST_OUTPUT=$(jq -rc -n \
+                --arg date "$(date -u --iso-8601=seconds)" \
+                --arg result "${result}" \
+                --arg note "${note}" \
+                '{result: $result, timestamp: $date, note: $note, failures: (if $result == "SUCCESS" then 0 else 1 end), successes: (if $result == "SUCCESS" then 1 else 0 end), warnings: 0}')
+              echo -n "${TEST_OUTPUT}" | tee "$(results.TEST_OUTPUT.path)"
+
+              [[ "${result}" == "SUCCESS" ]]
